@@ -1,6 +1,7 @@
 # macOS
 .DS_Store
-.github/
+
+# Data directories (user-specific)
 data/
 projects/
 
