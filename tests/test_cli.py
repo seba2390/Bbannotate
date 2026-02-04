@@ -73,12 +73,15 @@ class TestStartCommand:
         """Test start command help."""
         result = runner.invoke(app, ["start", "--help"])
         assert result.exit_code == 0
-        assert "--host" in result.output
-        assert "--port" in result.output
-        assert "--no-browser" in result.output
-        assert "--reload" in result.output
-        assert "--data-dir" in result.output
-        assert "--projects-dir" in result.output
+        # Strip ANSI codes - Rich adds color codes that split option names
+        import re
+        clean_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+        assert "--host" in clean_output
+        assert "--port" in clean_output
+        assert "--no-browser" in clean_output
+        assert "--reload" in clean_output
+        assert "--data-dir" in clean_output
+        assert "--projects-dir" in clean_output
 
     @patch("uvicorn.run")
     @patch("webbrowser.open")
