@@ -1,4 +1,4 @@
-.PHONY: clean install test dev frontend-install frontend-dev frontend-build
+.PHONY: clean install test dev frontend-install frontend-dev frontend-build stop
 
 # Python configuration
 PYTHON = python3.12
@@ -88,6 +88,15 @@ run:
 	$(VENV_BIN)/uvicorn src.main:app --host 127.0.0.1 --port 8000 & \
 	(cd $(FRONTEND_DIR) && npm run dev) & \
 	trap 'kill %1 %2 2>/dev/null' INT TERM; wait
+
+# Stop all running servers (backend + frontend)
+stop:
+	@echo "Stopping all servers..."
+	@-pkill -f "uvicorn src.main:app" 2>/dev/null || true
+	@-pkill -f "vite" 2>/dev/null || true
+	@-lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+	@-lsof -ti:5173 | xargs kill -9 2>/dev/null || true
+	@echo "All servers stopped!"
 
 # Type check Python code in src folder using pyright
 type-check:

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { EXPORT_FORMATS, getExportUrl, type ExportFormat } from '@/lib/api';
+import { EXPORT_FORMATS, getExportUrl, type ExportFormat, type DataSplit } from '@/lib/api';
 
 interface ExportDialogProps {
   onClose: () => void;
@@ -10,12 +10,58 @@ interface ExportDialogProps {
  */
 export function ExportDialog({ onClose }: ExportDialogProps): JSX.Element {
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('yolo');
-  const [trainSplit, setTrainSplit] = useState(0.8);
+  const [split, setSplit] = useState<DataSplit>({ train: 70, val: 20, test: 10 });
   const [isExporting, setIsExporting] = useState(false);
+
+  /**
+   * Update a split value while keeping the total at 100%.
+   * Adjusts other values proportionally.
+   */
+  const updateSplit = useCallback(
+    (key: keyof DataSplit, value: number): void => {
+      const newValue = Math.max(0, Math.min(100, value));
+      const oldValue = split[key];
+      const diff = newValue - oldValue;
+
+      // Get the other keys to adjust
+      const otherKeys = (['train', 'val', 'test'] as const).filter((k) => k !== key);
+      const otherTotal = otherKeys.reduce((sum, k) => sum + split[k], 0);
+
+      if (otherTotal === 0) {
+        // If other values are 0, just set this one to 100
+        setSplit({ train: 0, val: 0, test: 0, [key]: 100 });
+        return;
+      }
+
+      // Distribute the difference proportionally
+      const newSplit = { ...split, [key]: newValue };
+      otherKeys.forEach((k) => {
+        const proportion = split[k] / otherTotal;
+        newSplit[k] = Math.max(0, Math.round(split[k] - diff * proportion));
+      });
+
+      // Ensure total is exactly 100
+      const total = newSplit.train + newSplit.val + newSplit.test;
+      if (total !== 100) {
+        // Adjust the largest of the other values
+        const adjustKey = otherKeys.reduce((a, b) => (newSplit[a] >= newSplit[b] ? a : b));
+        newSplit[adjustKey] += 100 - total;
+      }
+
+      setSplit(newSplit);
+    },
+    [split]
+  );
 
   const handleExport = useCallback((): void => {
     setIsExporting(true);
-    const url = getExportUrl(selectedFormat, trainSplit);
+    // Convert percentages to decimals
+    const splitDecimals: DataSplit = {
+      train: split.train / 100,
+      val: split.val / 100,
+      test: split.test / 100,
+    };
+    const url = getExportUrl(selectedFormat, splitDecimals);
 
     // Create a form and submit it to trigger download
     const form = document.createElement('form');
@@ -30,7 +76,7 @@ export function ExportDialog({ onClose }: ExportDialogProps): JSX.Element {
       setIsExporting(false);
       onClose();
     }, 1000);
-  }, [selectedFormat, trainSplit, onClose]);
+  }, [selectedFormat, split, onClose]);
 
   const selectedFormatInfo = EXPORT_FORMATS.find((f) => f.id === selectedFormat);
 
@@ -102,24 +148,90 @@ export function ExportDialog({ onClose }: ExportDialogProps): JSX.Element {
           {selectedFormat === 'yolo' && (
             <div className="mt-4 rounded-lg bg-gray-50 p-4 dark:bg-gray-700/50">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Train/Validation Split
+                Train / Validation / Test Split
               </label>
-              <div className="mt-2 flex items-center gap-3">
-                <input
-                  type="range"
-                  min="0.5"
-                  max="0.95"
-                  step="0.05"
-                  value={trainSplit}
-                  onChange={(e) => setTrainSplit(parseFloat(e.target.value))}
-                  className="h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-gray-200 dark:bg-gray-600"
+
+              {/* Visual split bar */}
+              <div className="mt-3 flex h-6 overflow-hidden rounded-full">
+                <div
+                  className="bg-green-500 transition-all"
+                  style={{ width: `${split.train}%` }}
+                  title={`Train: ${split.train}%`}
                 />
-                <span className="min-w-[80px] text-sm text-gray-600 dark:text-gray-300">
-                  {Math.round(trainSplit * 100)}% train
-                </span>
+                <div
+                  className="bg-yellow-500 transition-all"
+                  style={{ width: `${split.val}%` }}
+                  title={`Val: ${split.val}%`}
+                />
+                <div
+                  className="bg-red-500 transition-all"
+                  style={{ width: `${split.test}%` }}
+                  title={`Test: ${split.test}%`}
+                />
               </div>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {Math.round((1 - trainSplit) * 100)}% of images will be in the validation set
+
+              {/* Split controls */}
+              <div className="mt-4 grid grid-cols-3 gap-4">
+                {/* Train */}
+                <div>
+                  <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-400">
+                    <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                    Train
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={split.train}
+                      onChange={(e) => updateSplit('train', parseInt(e.target.value) || 0)}
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-center text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    />
+                    <span className="text-sm text-gray-500 dark:text-gray-400">%</span>
+                  </div>
+                </div>
+
+                {/* Val */}
+                <div>
+                  <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-400">
+                    <span className="h-2.5 w-2.5 rounded-full bg-yellow-500" />
+                    Validation
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={split.val}
+                      onChange={(e) => updateSplit('val', parseInt(e.target.value) || 0)}
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-center text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    />
+                    <span className="text-sm text-gray-500 dark:text-gray-400">%</span>
+                  </div>
+                </div>
+
+                {/* Test */}
+                <div>
+                  <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-400">
+                    <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                    Test
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={split.test}
+                      onChange={(e) => updateSplit('test', parseInt(e.target.value) || 0)}
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-center text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    />
+                    <span className="text-sm text-gray-500 dark:text-gray-400">%</span>
+                  </div>
+                </div>
+              </div>
+
+              <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                Images will be randomly distributed across train, validation, and test sets.
               </p>
             </div>
           )}

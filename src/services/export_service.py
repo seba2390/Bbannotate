@@ -27,7 +27,13 @@ class ExportService:
                 labels.add(ann.label)
         return sorted(labels)
 
-    def export_yolo(self, output_dir: Path, train_split: float = 0.8) -> Path:
+    def export_yolo(
+        self,
+        output_dir: Path,
+        train_split: float = 0.7,
+        val_split: float = 0.2,
+        test_split: float = 0.1,
+    ) -> Path:
         """Export annotations in YOLO format.
 
         Creates the standard YOLO directory structure:
@@ -36,17 +42,29 @@ class ExportService:
         ├── train/
         │   ├── images/
         │   └── labels/
-        └── val/
+        ├── val/
+        │   ├── images/
+        │   └── labels/
+        └── test/  (optional, if test_split > 0)
             ├── images/
             └── labels/
 
         Args:
             output_dir: Directory to export to.
             train_split: Fraction of data for training (0-1).
+            val_split: Fraction of data for validation (0-1).
+            test_split: Fraction of data for testing (0-1).
 
         Returns:
             Path to the created data.yaml file.
         """
+        # Normalize splits to sum to 1
+        total = train_split + val_split + test_split
+        if total > 0:
+            train_split = train_split / total
+            val_split = val_split / total
+            test_split = test_split / total
+
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Create directory structure
@@ -55,14 +73,29 @@ class ExportService:
         val_images = output_dir / "val" / "images"
         val_labels = output_dir / "val" / "labels"
 
-        for d in [train_images, train_labels, val_images, val_labels]:
+        dirs_to_create = [train_images, train_labels, val_images, val_labels]
+
+        # Only create test directories if test_split > 0
+        if test_split > 0:
+            test_images = output_dir / "test" / "images"
+            test_labels = output_dir / "test" / "labels"
+            dirs_to_create.extend([test_images, test_labels])
+        else:
+            test_images = None
+            test_labels = None
+
+        for d in dirs_to_create:
             d.mkdir(parents=True, exist_ok=True)
 
         # Get all images and split
         images = self.annotation_service.list_images()
-        split_idx = int(len(images) * train_split)
-        train_files = images[:split_idx]
-        val_files = images[split_idx:]
+        n = len(images)
+        train_end = int(n * train_split)
+        val_end = int(n * (train_split + val_split))
+
+        train_files = images[:train_end]
+        val_files = images[train_end:val_end]
+        test_files = images[val_end:] if test_split > 0 else []
 
         # Build label mapping from project
         labels = self._get_all_labels()
@@ -76,9 +109,18 @@ class ExportService:
         for filename in val_files:
             self._export_yolo_image(filename, val_images, val_labels, label_to_id)
 
+        # Export test set
+        if test_images and test_labels:
+            for filename in test_files:
+                self._export_yolo_image(
+                    filename, test_images, test_labels, label_to_id
+                )
+
         # Create data.yaml
         data_yaml = output_dir / "data.yaml"
-        yaml_content = self._create_yolo_yaml(output_dir, labels)
+        yaml_content = self._create_yolo_yaml(
+            output_dir, labels, include_test=(test_split > 0)
+        )
         data_yaml.write_text(yaml_content)
 
         return data_yaml
@@ -111,26 +153,41 @@ class ExportService:
 
         label_path.write_text("\n".join(lines))
 
-    def _create_yolo_yaml(self, output_dir: Path, labels: list[str]) -> str:
+    def _create_yolo_yaml(
+        self, output_dir: Path, labels: list[str], include_test: bool = False
+    ) -> str:
         """Create YOLO data.yaml content."""
         lines = [
             f"path: {output_dir.absolute()}",
             "train: train/images",
             "val: val/images",
-            "",
-            f"nc: {len(labels)}",
-            "names:",
         ]
+        if include_test:
+            lines.append("test: test/images")
+        lines.extend(
+            [
+                "",
+                f"nc: {len(labels)}",
+                "names:",
+            ]
+        )
         for i, label in enumerate(labels):
             lines.append(f"  {i}: {label}")
 
         return "\n".join(lines) + "\n"
 
-    def export_yolo_zip(self, train_split: float = 0.8) -> Path:
+    def export_yolo_zip(
+        self,
+        train_split: float = 0.7,
+        val_split: float = 0.2,
+        test_split: float = 0.1,
+    ) -> Path:
         """Export annotations as a ZIP file for easy download.
 
         Args:
             train_split: Fraction of data for training (0-1).
+            val_split: Fraction of data for validation (0-1).
+            test_split: Fraction of data for testing (0-1).
 
         Returns:
             Path to the created ZIP file.
@@ -141,7 +198,7 @@ class ExportService:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             export_dir = temp_path / "yolo_dataset"
-            self.export_yolo(export_dir, train_split)
+            self.export_yolo(export_dir, train_split, val_split, test_split)
 
             # Create zip file in data directory
             zip_path = self.annotation_service.data_dir / "yolo_export.zip"

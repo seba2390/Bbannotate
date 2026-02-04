@@ -250,10 +250,12 @@ def copy_annotations(
 @router.post("/export/yolo")
 def export_yolo(
     export_service: Annotated[ExportService, Depends(get_export_service)],
-    train_split: Annotated[float, Query(ge=0.1, le=0.99)] = 0.8,
+    train_split: Annotated[float, Query(ge=0.1, le=0.98)] = 0.7,
+    val_split: Annotated[float, Query(ge=0.01, le=0.5)] = 0.2,
+    test_split: Annotated[float, Query(ge=0.0, le=0.5)] = 0.1,
 ) -> FileResponse:
     """Export annotations in YOLO format as a ZIP file."""
-    zip_path = export_service.export_yolo_zip(train_split)
+    zip_path = export_service.export_yolo_zip(train_split, val_split, test_split)
     return FileResponse(
         zip_path,
         media_type="application/zip",
