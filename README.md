@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="Bbannotate Logo" width="400">
+  <img src="frontend/public/logo.png" alt="Bbannotate Logo" width="400">
 </p>
 
 # Bbannotate
