@@ -125,6 +125,7 @@ def start(
 
     # Open browser after server is ready (in background thread)
     if not no_browser:
+
         def open_browser_when_ready() -> None:
             """Wait for server to be ready, then open browser."""
             import urllib.error

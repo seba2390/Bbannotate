@@ -75,6 +75,7 @@ class TestStartCommand:
         assert result.exit_code == 0
         # Strip ANSI codes - Rich adds color codes that split option names
         import re
+
         clean_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
         assert "--host" in clean_output
         assert "--port" in clean_output
@@ -187,9 +188,7 @@ class TestStartCommand:
         data_dir.mkdir()
 
         with patch.dict(os.environ, {}, clear=False):
-            runner.invoke(
-                app, ["start", "--data-dir", str(data_dir), "--no-browser"]
-            )
+            runner.invoke(app, ["start", "--data-dir", str(data_dir), "--no-browser"])
             # The env variable should have been set
             assert "BBANNOTATE_DATA_DIR" in os.environ
 

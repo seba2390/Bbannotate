@@ -32,8 +32,20 @@ clean:
 	rm -rf dist
 	@echo "Clean complete!"
 
-# Install dependencies (Python)
-install:
+# Install frontend dependencies
+frontend-install:
+	@echo "Installing frontend dependencies..."
+	cd $(FRONTEND_DIR) && npm install
+	@echo "Frontend installation complete!"
+
+# Build frontend for production
+frontend-build: frontend-install
+	@echo "Building frontend..."
+	cd $(FRONTEND_DIR) && npm run build
+	@echo "Frontend build complete!"
+
+# Install dependencies (Python) - requires frontend to be built first
+install: frontend-build
 	@echo "Installing dependencies..."
 	@if [ -d "$(VENV)" ]; then \
 		echo "Deleting existing virtual environment..."; \
@@ -47,25 +59,13 @@ install:
 	@$(VENV_BIN)/pip install -e ".[dev]"
 	@echo "Installation complete!"
 
-# Install frontend dependencies
-frontend-install:
-	@echo "Installing frontend dependencies..."
-	cd $(FRONTEND_DIR) && npm install
-	@echo "Frontend installation complete!"
-
-# Install all dependencies (backend + frontend)
-install-all: install frontend-install
+# Install all dependencies (backend + frontend) - alias for install
+install-all: install
 
 # Run frontend development server
 frontend-dev:
 	@echo "Starting frontend dev server..."
 	cd $(FRONTEND_DIR) && npm run dev
-
-# Build frontend for production
-frontend-build:
-	@echo "Building frontend..."
-	cd $(FRONTEND_DIR) && npm run build
-	@echo "Frontend build complete!"
 
 # Run backend development server
 backend-dev:
