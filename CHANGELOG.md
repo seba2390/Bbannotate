@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-02-05
+
+### Fixed
+
+- Wait for server to be ready before opening browser (prevents ERR_CONNECTION_REFUSED)
+- Fixed Windows test timing issue for project ordering
+- Fixed Makefile to build frontend before Python install
+
 ## [1.0.2] - 2026-02-05
 
 ### Fixed
