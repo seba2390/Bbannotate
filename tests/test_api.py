@@ -53,6 +53,25 @@ def large_image() -> bytes:
     return buffer.getvalue()
 
 
+class TestHealthEndpoint:
+    """Tests for the health check endpoint."""
+
+    def test_health_check(self, client: TestClient) -> None:
+        """Test that /api/health returns healthy status."""
+        response = client.get("/api/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["api"] == "ready"
+
+    def test_root_health_check(self, client: TestClient) -> None:
+        """Test that /health (root level) also returns healthy status."""
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+
+
 class TestProjectEndpoints:
     """Tests for project-level endpoints."""
 
@@ -256,16 +275,6 @@ class TestAnnotationEndpoints:
         # Verify deleted
         response = client.get("/api/images/test.png/annotations")
         assert len(response.json()) == 0
-
-
-class TestHealthEndpoint:
-    """Tests for health check endpoint."""
-
-    def test_health_check(self, client: TestClient) -> None:
-        """Test health check endpoint."""
-        response = client.get("/health")
-        assert response.status_code == 200
-        assert response.json() == {"status": "healthy"}
 
 
 class TestImageEndpointsErrorCases:

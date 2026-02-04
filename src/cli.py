@@ -123,8 +123,9 @@ def start(
         )
     )
 
-    # Open browser after server is ready (in background thread)
+    # Open browser after server is ready (in background thread with loading animation)
     if not no_browser:
+        server_ready = threading.Event()
 
         def open_browser_when_ready() -> None:
             """Wait for server to be ready, then open browser."""
@@ -136,15 +137,31 @@ def start(
             for _ in range(max_attempts):
                 try:
                     with urllib.request.urlopen(health_url, timeout=0.5):
+                        server_ready.set()
                         webbrowser.open(url)
                         return
                 except (urllib.error.URLError, TimeoutError, OSError):
                     time.sleep(0.1)
             # Fallback: open anyway after timeout
+            server_ready.set()
             webbrowser.open(url)
 
-        thread = threading.Thread(target=open_browser_when_ready, daemon=True)
-        thread.start()
+        def show_loading_spinner() -> None:
+            """Show a loading spinner until server is ready."""
+            from rich.live import Live
+            from rich.spinner import Spinner
+            from rich.text import Text
+
+            spinner = Spinner("dots", text=Text(" Waiting for server...", style="cyan"))
+            with Live(spinner, console=console, refresh_per_second=10, transient=True):
+                while not server_ready.wait(timeout=0.1):
+                    pass
+            console.print("[green]✓[/green] Server ready!")
+
+        browser_thread = threading.Thread(target=open_browser_when_ready, daemon=True)
+        spinner_thread = threading.Thread(target=show_loading_spinner, daemon=True)
+        browser_thread.start()
+        spinner_thread.start()
 
     # Start uvicorn (blocking)
     import uvicorn

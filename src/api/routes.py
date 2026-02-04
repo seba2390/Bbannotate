@@ -69,6 +69,13 @@ def get_export_service(
     return ExportService(annotation_service)
 
 
+# Health check endpoint
+@router.get("/health")
+def health_check() -> dict[str, str]:
+    """Health check endpoint for API availability."""
+    return {"status": "healthy", "api": "ready"}
+
+
 # Project management endpoints
 @router.get("/projects", response_model=list[Project])
 def list_projects(
