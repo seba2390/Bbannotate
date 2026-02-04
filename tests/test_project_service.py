@@ -50,7 +50,7 @@ class TestProjectService:
         import time
 
         service.create_project(ProjectCreate(name="Project A"))
-        time.sleep(0.01)  # Ensure different timestamps on Windows
+        time.sleep(0.1)  # Ensure different timestamps on Windows (needs ~100ms)
         service.create_project(ProjectCreate(name="Project B"))
 
         projects = service.list_projects()
