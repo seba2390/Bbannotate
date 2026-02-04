@@ -274,3 +274,46 @@ def export_coco(
         media_type="application/json",
         filename="coco_annotations.json",
     )
+
+
+@router.post("/export/pascal-voc")
+def export_pascal_voc(
+    export_service: Annotated[ExportService, Depends(get_export_service)],
+) -> FileResponse:
+    """Export annotations in Pascal VOC XML format as a ZIP file."""
+    zip_path = export_service.export_pascal_voc_zip()
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename="pascal_voc_dataset.zip",
+    )
+
+
+@router.post("/export/createml")
+def export_createml(
+    export_service: Annotated[ExportService, Depends(get_export_service)],
+    annotation_service: Annotated[AnnotationService, Depends(get_annotation_service)],
+) -> FileResponse:
+    """Export annotations in Apple CreateML JSON format."""
+    output_path = annotation_service.data_dir / "createml_annotations.json"
+    export_service.export_createml(output_path)
+    return FileResponse(
+        output_path,
+        media_type="application/json",
+        filename="createml_annotations.json",
+    )
+
+
+@router.post("/export/csv")
+def export_csv(
+    export_service: Annotated[ExportService, Depends(get_export_service)],
+    annotation_service: Annotated[AnnotationService, Depends(get_annotation_service)],
+) -> FileResponse:
+    """Export annotations in CSV format."""
+    output_path = annotation_service.data_dir / "annotations.csv"
+    export_service.export_csv(output_path)
+    return FileResponse(
+        output_path,
+        media_type="text/csv",
+        filename="annotations.csv",
+    )

@@ -9,7 +9,7 @@ interface ToolbarProps {
   onPrevImage: () => void;
   onNextImage: () => void;
   onClearAnnotations: () => void;
-  onExportYolo: () => void;
+  onExport: () => void;
   onManageLabels: () => void;
   imageIndex: number;
   imageCount: number;
@@ -25,7 +25,7 @@ export function Toolbar({
   onPrevImage,
   onNextImage,
   onClearAnnotations,
-  onExportYolo,
+  onExport,
   onManageLabels,
   imageIndex,
   imageCount,
@@ -101,11 +101,11 @@ export function Toolbar({
         </button>
 
         <button
-          onClick={onExportYolo}
+          onClick={onExport}
           className="rounded-lg bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
-          title="Export to YOLO format"
+          title="Export annotations"
         >
-          Export YOLO
+          Export
         </button>
       </div>
     </div>

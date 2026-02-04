@@ -7,9 +7,10 @@ import {
   Toolbar,
   ProjectManager,
   LabelManager,
+  ExportDialog,
 } from '@/components';
 import { useAnnotations, useImages } from '@/hooks';
-import { getImageUrl, getYoloExportUrl, getProjectInfo, closeProject } from '@/lib/api';
+import { getImageUrl, getProjectInfo, closeProject } from '@/lib/api';
 import type { ToolMode, DrawingRect, BoundingBox, Project } from '@/types';
 
 /** Default labels for grocery flyer annotation */
@@ -48,6 +49,7 @@ function App(): JSX.Element {
   const [labels, setLabels] = useState<string[]>(loadLabels);
   const [currentLabel, setCurrentLabel] = useState(labels[0] ?? 'product');
   const [showLabelManager, setShowLabelManager] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return (
@@ -243,9 +245,8 @@ function App(): JSX.Element {
     }
   }, [currentImage, clearAnnotations]);
 
-  const handleExportYolo = useCallback(() => {
-    // Open export download in new tab
-    window.open(getYoloExportUrl(0.8), '_blank');
+  const handleExport = useCallback((): void => {
+    setShowExportDialog(true);
   }, []);
 
   // Handle label updates from LabelManager
@@ -347,7 +348,7 @@ function App(): JSX.Element {
         onPrevImage={prevImage}
         onNextImage={nextImage}
         onClearAnnotations={handleClearAnnotations}
-        onExportYolo={handleExportYolo}
+        onExport={handleExport}
         onManageLabels={() => setShowLabelManager(true)}
         imageIndex={currentIndex}
         imageCount={images.length}
@@ -361,6 +362,9 @@ function App(): JSX.Element {
           onClose={() => setShowLabelManager(false)}
         />
       )}
+
+      {/* Export Dialog Modal */}
+      {showExportDialog && <ExportDialog onClose={() => setShowExportDialog(false)} />}
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">

@@ -220,3 +220,221 @@ class ExportService:
             json.dump(coco_data, f, indent=2)
 
         return output_path
+
+    def export_pascal_voc(self, output_dir: Path) -> Path:
+        """Export annotations in Pascal VOC XML format.
+
+        Creates XML files per image with the standard VOC structure.
+
+        Args:
+            output_dir: Directory to export to.
+
+        Returns:
+            Path to the output directory.
+        """
+        from xml.etree import ElementTree as ET
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        annotations_dir = output_dir / "Annotations"
+        images_dir = output_dir / "JPEGImages"
+        annotations_dir.mkdir(exist_ok=True)
+        images_dir.mkdir(exist_ok=True)
+
+        for filename in self.annotation_service.list_images():
+            annotations = self.annotation_service.get_annotations(filename)
+            metadata = self.annotation_service._load_metadata(filename)
+            source_path = self.annotation_service.get_image_path(filename)
+
+            if metadata is None or source_path is None:
+                continue
+
+            # Copy image
+            shutil.copy(source_path, images_dir / filename)
+
+            # Create XML annotation
+            root = ET.Element("annotation")
+            ET.SubElement(root, "folder").text = "JPEGImages"
+            ET.SubElement(root, "filename").text = filename
+
+            size = ET.SubElement(root, "size")
+            ET.SubElement(size, "width").text = str(metadata.image.width)
+            ET.SubElement(size, "height").text = str(metadata.image.height)
+            ET.SubElement(size, "depth").text = "3"
+
+            ET.SubElement(root, "segmented").text = "0"
+
+            for ann in annotations:
+                obj = ET.SubElement(root, "object")
+                ET.SubElement(obj, "name").text = ann.label
+                ET.SubElement(obj, "pose").text = "Unspecified"
+                ET.SubElement(obj, "truncated").text = "0"
+                ET.SubElement(obj, "difficult").text = "0"
+
+                # Convert from normalized center format to absolute corner format
+                x_min = int(
+                    (ann.bbox.x - ann.bbox.width / 2) * metadata.image.width
+                )
+                y_min = int(
+                    (ann.bbox.y - ann.bbox.height / 2) * metadata.image.height
+                )
+                x_max = int(
+                    (ann.bbox.x + ann.bbox.width / 2) * metadata.image.width
+                )
+                y_max = int(
+                    (ann.bbox.y + ann.bbox.height / 2) * metadata.image.height
+                )
+
+                bndbox = ET.SubElement(obj, "bndbox")
+                ET.SubElement(bndbox, "xmin").text = str(max(0, x_min))
+                ET.SubElement(bndbox, "ymin").text = str(max(0, y_min))
+                ET.SubElement(bndbox, "xmax").text = str(
+                    min(metadata.image.width, x_max)
+                )
+                ET.SubElement(bndbox, "ymax").text = str(
+                    min(metadata.image.height, y_max)
+                )
+
+            # Write XML file
+            tree = ET.ElementTree(root)
+            xml_path = annotations_dir / f"{Path(filename).stem}.xml"
+            tree.write(xml_path, encoding="unicode", xml_declaration=True)
+
+        return output_dir
+
+    def export_pascal_voc_zip(self) -> Path:
+        """Export Pascal VOC annotations as a ZIP file.
+
+        Returns:
+            Path to the created ZIP file.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            export_dir = temp_path / "pascal_voc_dataset"
+            self.export_pascal_voc(export_dir)
+
+            zip_path = self.annotation_service.data_dir / "pascal_voc_export.zip"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+                for file_path in export_dir.rglob("*"):
+                    if file_path.is_file():
+                        arcname = file_path.relative_to(export_dir)
+                        zipf.write(file_path, arcname)
+
+        return zip_path
+
+    def export_createml(self, output_path: Path) -> Path:
+        """Export annotations in Apple CreateML JSON format.
+
+        Args:
+            output_path: Path for the output JSON file.
+
+        Returns:
+            Path to the created JSON file.
+        """
+        import json
+
+        createml_data = []
+
+        for filename in self.annotation_service.list_images():
+            annotations = self.annotation_service.get_annotations(filename)
+            metadata = self.annotation_service._load_metadata(filename)
+
+            if metadata is None:
+                continue
+
+            image_annotations = []
+            for ann in annotations:
+                # CreateML uses center-based coordinates with absolute pixels
+                width_px = ann.bbox.width * metadata.image.width
+                height_px = ann.bbox.height * metadata.image.height
+                center_x = ann.bbox.x * metadata.image.width
+                center_y = ann.bbox.y * metadata.image.height
+
+                image_annotations.append(
+                    {
+                        "label": ann.label,
+                        "coordinates": {
+                            "x": round(center_x, 2),
+                            "y": round(center_y, 2),
+                            "width": round(width_px, 2),
+                            "height": round(height_px, 2),
+                        },
+                    }
+                )
+
+            createml_data.append(
+                {"image": filename, "annotations": image_annotations}
+            )
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w") as f:
+            json.dump(createml_data, f, indent=2)
+
+        return output_path
+
+    def export_csv(self, output_path: Path) -> Path:
+        """Export annotations in CSV format.
+
+        Format: image_filename,label,x_min,y_min,x_max,y_max,width,height
+
+        Args:
+            output_path: Path for the output CSV file.
+
+        Returns:
+            Path to the created CSV file.
+        """
+        import csv
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with output_path.open("w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                [
+                    "filename",
+                    "label",
+                    "x_min",
+                    "y_min",
+                    "x_max",
+                    "y_max",
+                    "image_width",
+                    "image_height",
+                ]
+            )
+
+            for filename in self.annotation_service.list_images():
+                annotations = self.annotation_service.get_annotations(filename)
+                metadata = self.annotation_service._load_metadata(filename)
+
+                if metadata is None:
+                    continue
+
+                for ann in annotations:
+                    x_min = int(
+                        (ann.bbox.x - ann.bbox.width / 2) * metadata.image.width
+                    )
+                    y_min = int(
+                        (ann.bbox.y - ann.bbox.height / 2) * metadata.image.height
+                    )
+                    x_max = int(
+                        (ann.bbox.x + ann.bbox.width / 2) * metadata.image.width
+                    )
+                    y_max = int(
+                        (ann.bbox.y + ann.bbox.height / 2) * metadata.image.height
+                    )
+
+                    writer.writerow(
+                        [
+                            filename,
+                            ann.label,
+                            max(0, x_min),
+                            max(0, y_min),
+                            min(metadata.image.width, x_max),
+                            min(metadata.image.height, y_max),
+                            metadata.image.width,
+                            metadata.image.height,
+                        ]
+                    )
+
+        return output_path

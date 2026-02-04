@@ -444,3 +444,213 @@ class TestCocoExport:
         assert data["images"] == []
         assert data["annotations"] == []
         assert data["categories"] == []
+
+
+class TestPascalVocExport:
+    """Tests for Pascal VOC XML export."""
+
+    def test_export_pascal_voc_creates_directory_structure(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test that Pascal VOC export creates correct directory structure."""
+        annotation_service.upload_image("test.png", sample_image_bytes)
+        output_dir = temp_data_dir / "voc_output"
+        export_service.export_pascal_voc(output_dir)
+
+        assert (output_dir / "Annotations").exists()
+        assert (output_dir / "JPEGImages").exists()
+
+    def test_export_pascal_voc_xml_content(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test Pascal VOC XML file content."""
+        from xml.etree import ElementTree as ET
+
+        annotation_service.upload_image("test.png", sample_image_bytes)
+        bbox = BoundingBox(x=0.5, y=0.5, width=0.2, height=0.2)
+        annotation_service.add_annotation(
+            "test.png", AnnotationCreate(label="product", class_id=0, bbox=bbox)
+        )
+
+        output_dir = temp_data_dir / "voc_output"
+        export_service.export_pascal_voc(output_dir)
+
+        xml_path = output_dir / "Annotations" / "test.xml"
+        assert xml_path.exists()
+
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+
+        assert root.find("filename").text == "test.png"
+        assert root.find("size/width").text == "100"
+        assert root.find("size/height").text == "100"
+
+        obj = root.find("object")
+        assert obj is not None
+        assert obj.find("name").text == "product"
+
+        bndbox = obj.find("bndbox")
+        assert bndbox.find("xmin").text == "40"
+        assert bndbox.find("ymin").text == "40"
+        assert bndbox.find("xmax").text == "60"
+        assert bndbox.find("ymax").text == "60"
+
+    def test_export_pascal_voc_zip(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+    ) -> None:
+        """Test Pascal VOC ZIP export."""
+        annotation_service.upload_image("test.png", sample_image_bytes)
+        zip_path = export_service.export_pascal_voc_zip()
+
+        assert zip_path.exists()
+        with zipfile.ZipFile(zip_path) as zf:
+            names = zf.namelist()
+            assert any("Annotations" in n for n in names)
+            assert any("JPEGImages" in n for n in names)
+
+
+class TestCreateMLExport:
+    """Tests for Apple CreateML JSON export."""
+
+    def test_export_createml_creates_file(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test that CreateML export creates a JSON file."""
+        annotation_service.upload_image("test.png", sample_image_bytes)
+        output_path = temp_data_dir / "createml.json"
+        result = export_service.export_createml(output_path)
+
+        assert result == output_path
+        assert output_path.exists()
+
+    def test_export_createml_structure(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test CreateML JSON structure."""
+        annotation_service.upload_image("test.png", sample_image_bytes)
+        bbox = BoundingBox(x=0.5, y=0.5, width=0.2, height=0.2)
+        annotation_service.add_annotation(
+            "test.png", AnnotationCreate(label="product", class_id=0, bbox=bbox)
+        )
+
+        output_path = temp_data_dir / "createml.json"
+        export_service.export_createml(output_path)
+
+        with output_path.open() as f:
+            data = json.load(f)
+
+        assert len(data) == 1
+        assert data[0]["image"] == "test.png"
+        assert len(data[0]["annotations"]) == 1
+
+        ann = data[0]["annotations"][0]
+        assert ann["label"] == "product"
+        assert "coordinates" in ann
+        # Center-based coordinates in pixels
+        assert ann["coordinates"]["x"] == pytest.approx(50, abs=0.1)
+        assert ann["coordinates"]["y"] == pytest.approx(50, abs=0.1)
+        assert ann["coordinates"]["width"] == pytest.approx(20, abs=0.1)
+        assert ann["coordinates"]["height"] == pytest.approx(20, abs=0.1)
+
+    def test_export_createml_empty_dataset(
+        self,
+        export_service: ExportService,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test CreateML export with empty dataset."""
+        output_path = temp_data_dir / "createml.json"
+        export_service.export_createml(output_path)
+
+        with output_path.open() as f:
+            data = json.load(f)
+
+        assert data == []
+
+
+class TestCsvExport:
+    """Tests for CSV export."""
+
+    def test_export_csv_creates_file(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test that CSV export creates a file."""
+        annotation_service.upload_image("test.png", sample_image_bytes)
+        output_path = temp_data_dir / "annotations.csv"
+        result = export_service.export_csv(output_path)
+
+        assert result == output_path
+        assert output_path.exists()
+
+    def test_export_csv_content(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test CSV file content."""
+        import csv
+
+        annotation_service.upload_image("test.png", sample_image_bytes)
+        bbox = BoundingBox(x=0.5, y=0.5, width=0.2, height=0.2)
+        annotation_service.add_annotation(
+            "test.png", AnnotationCreate(label="product", class_id=0, bbox=bbox)
+        )
+
+        output_path = temp_data_dir / "annotations.csv"
+        export_service.export_csv(output_path)
+
+        with output_path.open() as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["filename"] == "test.png"
+        assert row["label"] == "product"
+        assert row["x_min"] == "40"
+        assert row["y_min"] == "40"
+        assert row["x_max"] == "60"
+        assert row["y_max"] == "60"
+        assert row["image_width"] == "100"
+        assert row["image_height"] == "100"
+
+    def test_export_csv_empty_dataset(
+        self,
+        export_service: ExportService,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test CSV export with empty dataset."""
+        import csv
+
+        output_path = temp_data_dir / "annotations.csv"
+        export_service.export_csv(output_path)
+
+        with output_path.open() as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        assert rows == []
