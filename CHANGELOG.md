@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-02-05
+
+### Fixed
+
+- Fixed CI workflow to build wheel directly (avoiding sdist which excludes frontend/dist)
+- Fixed CLI help test to handle Rich ANSI color codes in output
+- Fixed .gitignore to properly track `frontend/src/lib/api.ts`
+
 ## [1.0.1] - 2026-02-04
 
 ### Fixed
