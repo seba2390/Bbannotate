@@ -86,10 +86,27 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-8 dark:bg-gray-900">
       <div className="w-full max-w-2xl">
-        {/* Header */}
+        {/* Logo */}
+        <div className="-mt-4 mb-4 flex justify-center">
+          <div
+            className="relative h-48 w-96"
+            style={{
+              maskImage: 'radial-gradient(ellipse 80% 80% at center, black 40%, transparent 100%)',
+              WebkitMaskImage:
+                'radial-gradient(ellipse 80% 80% at center, black 40%, transparent 100%)',
+            }}
+          >
+            <img
+              src="/logo.png"
+              alt="Bbannotate Logo"
+              className="h-full w-full object-contain"
+            />
+          </div>
+        </div>
+
+        {/* Subtitle */}
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Bbannotate</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
+          <p className="text-gray-600 dark:text-gray-400">
             Bounding box annotation tool for image datasets
           </p>
         </div>

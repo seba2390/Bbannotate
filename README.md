@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="Bbannotate Logo" width="400">
+</p>
+
 # Bbannotate
 
 Bounding box annotation tool for image datasets. React/TypeScript frontend, FastAPI backend, YOLO export.

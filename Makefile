@@ -87,7 +87,8 @@ run:
 	@echo "Press Ctrl+C to stop"
 	$(VENV_BIN)/uvicorn src.main:app --host 127.0.0.1 --port 8000 & \
 	(cd $(FRONTEND_DIR) && npm run dev) & \
-	trap 'kill %1 %2 2>/dev/null' INT TERM; wait
+	(sleep 2 && open http://localhost:5173) & \
+	trap 'kill %1 %2 %3 2>/dev/null' INT TERM; wait
 
 # Stop all running servers (backend + frontend)
 stop:

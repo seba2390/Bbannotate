@@ -81,10 +81,10 @@ export function ExportDialog({ onClose }: ExportDialogProps): JSX.Element {
   const selectedFormatInfo = EXPORT_FORMATS.find((f) => f.id === selectedFormat);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl dark:bg-gray-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-xl bg-white shadow-2xl dark:bg-gray-800">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             Export Annotations
           </h2>
@@ -104,7 +104,7 @@ export function ExportDialog({ onClose }: ExportDialogProps): JSX.Element {
         </div>
 
         {/* Content */}
-        <div className="px-6 py-4">
+        <div className="overflow-y-auto px-6 py-4">
           <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
             Choose an export format for your annotations. Different formats are compatible with
             different machine learning frameworks.
@@ -238,7 +238,7 @@ export function ExportDialog({ onClose }: ExportDialogProps): JSX.Element {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+        <div className="flex shrink-0 items-center justify-between border-t border-gray-200 px-6 py-4 dark:border-gray-700">
           <div className="text-sm text-gray-500 dark:text-gray-400">
             {selectedFormatInfo && (
               <span>
