@@ -2,6 +2,8 @@
 
 import subprocess
 import sys
+import threading
+import time
 import webbrowser
 from pathlib import Path
 from typing import Annotated
@@ -121,11 +123,29 @@ def start(
         )
     )
 
-    # Open browser if requested
+    # Open browser after server is ready (in background thread)
     if not no_browser:
-        webbrowser.open(url)
+        def open_browser_when_ready() -> None:
+            """Wait for server to be ready, then open browser."""
+            import urllib.request
+            import urllib.error
 
-    # Start uvicorn
+            health_url = f"{url}/api/health"
+            max_attempts = 50  # 5 seconds max wait
+            for _ in range(max_attempts):
+                try:
+                    with urllib.request.urlopen(health_url, timeout=0.5):
+                        webbrowser.open(url)
+                        return
+                except (urllib.error.URLError, TimeoutError, OSError):
+                    time.sleep(0.1)
+            # Fallback: open anyway after timeout
+            webbrowser.open(url)
+
+        thread = threading.Thread(target=open_browser_when_ready, daemon=True)
+        thread.start()
+
+    # Start uvicorn (blocking)
     import uvicorn
 
     uvicorn.run(

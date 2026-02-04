@@ -139,15 +139,26 @@ class TestStartCommand:
         )
 
     @patch("uvicorn.run")
+    @patch("urllib.request.urlopen")
     @patch("webbrowser.open")
     def test_start_opens_browser_by_default(
         self,
         mock_webbrowser: MagicMock,
+        mock_urlopen: MagicMock,
         mock_uvicorn: MagicMock,
         runner: CliRunner,
     ) -> None:
         """Test start command opens browser by default."""
+        import time
+
+        # Mock health check to succeed immediately
+        mock_urlopen.return_value.__enter__ = MagicMock()
+        mock_urlopen.return_value.__exit__ = MagicMock()
+
         runner.invoke(app, ["start"])
+
+        # Give the background thread time to run
+        time.sleep(0.2)
         mock_webbrowser.assert_called_once_with("http://127.0.0.1:8000")
 
     @patch("uvicorn.run")
