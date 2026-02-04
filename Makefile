@@ -1,4 +1,4 @@
-.PHONY: clean install test dev frontend-install frontend-dev frontend-build stop
+.PHONY: clean install test dev frontend-install frontend-dev frontend-build stop wheel
 
 # Python configuration
 PYTHON = python3.12
@@ -152,6 +152,13 @@ build:
 	$(VENV_BIN)/pip install build
 	$(VENV_BIN)/python -m build
 	@echo "Package built in dist/"
+
+# Build wheel for distribution (matches publish.yml workflow)
+wheel: frontend-build
+	@echo "Building wheel..."
+	$(VENV_BIN)/pip install build
+	$(VENV_BIN)/python -m build --wheel
+	@echo "Wheel built in dist/"
 
 # Publish to PyPI (requires twine and PyPI credentials)
 publish:
