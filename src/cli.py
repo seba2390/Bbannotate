@@ -212,16 +212,27 @@ def info() -> None:
 
 
 def _find_frontend_dist() -> Path | None:
-    """Find the frontend dist directory."""
-    # Check relative to package
-    package_dir = Path(__file__).parent.parent
-    dist_path = package_dir / "frontend" / "dist"
-    if dist_path.exists():
-        return dist_path
+    """Find the frontend dist directory.
+
+    Checks in order:
+    1. Bundled with package (src/frontend_dist) - for pip install
+    2. Relative to package (frontend/dist) - for development
+    3. Current working directory (frontend/dist) - for development
+    """
+    # Check bundled location (pip install includes frontend_dist in src/)
+    package_dir = Path(__file__).parent
+    bundled_path = package_dir / "frontend_dist"
+    if bundled_path.exists() and (bundled_path / "index.html").exists():
+        return bundled_path
+
+    # Check relative to package root (development mode with frontend/dist)
+    dev_path = package_dir.parent / "frontend" / "dist"
+    if dev_path.exists() and (dev_path / "index.html").exists():
+        return dev_path
 
     # Check current working directory
     cwd_dist = Path.cwd() / "frontend" / "dist"
-    if cwd_dist.exists():
+    if cwd_dist.exists() and (cwd_dist / "index.html").exists():
         return cwd_dist
 
     return None

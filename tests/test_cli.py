@@ -323,21 +323,19 @@ class TestFindFrontendDist:
 
     def test_find_frontend_dist_not_found(self, temp_dir: Path) -> None:
         """Test _find_frontend_dist returns None when not found."""
-        with patch("src.cli.Path") as mock_path:
-            # Mock to return paths that don't exist
-            mock_path.return_value.parent.parent = temp_dir
-            mock_path.cwd.return_value = temp_dir
-            # Neither path exists
+        with patch.object(Path, "cwd", return_value=temp_dir):
+            # Create empty directories (no index.html)
             result = _find_frontend_dist()
             # Since we're testing in a real environment, it may find the real dist
             # Just verify it returns Path or None
             assert result is None or isinstance(result, Path)
 
-    def test_find_frontend_dist_in_package(self, temp_dir: Path) -> None:
-        """Test _find_frontend_dist finds dist in package directory."""
-        # Create the dist directory
+    def test_find_frontend_dist_in_cwd(self, temp_dir: Path) -> None:
+        """Test _find_frontend_dist finds dist in cwd directory."""
+        # Create the dist directory with index.html
         dist_dir = temp_dir / "frontend" / "dist"
         dist_dir.mkdir(parents=True)
+        (dist_dir / "index.html").write_text("<html></html>")
 
         with patch.object(Path, "cwd", return_value=temp_dir):
             result = _find_frontend_dist()
