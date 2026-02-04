@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/bbannotate/"><img src="https://img.shields.io/pypi/v/bbannotate?color=blue" alt="PyPI version"></a>
-  <a href="https://pypi.org/project/bbannotate/"><img src="https://img.shields.io/pypi/pyversions/bbannotate" alt="Python versions"></a>
+  <a href="https://pypi.org/project/bbannotate/"><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python versions"></a>
   <a href="https://github.com/seba2390/Bbannotate/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
 </p>
 
