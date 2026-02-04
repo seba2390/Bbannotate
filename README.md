@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="frontend/public/logo.png" alt="Bbannotate Logo" width="400">
+  <img src="https://raw.githubusercontent.com/seba2390/Bbannotate/main/frontend/public/logo.png" alt="Bbannotate Logo" width="400">
 </p>
 
 <p align="center">

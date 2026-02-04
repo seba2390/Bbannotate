@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-02-04
+
+### Fixed
+
+- Fixed logo image URL in README to use absolute path for PyPI display
+- Fixed badge URLs to use correct GitHub repository
+
 ## [1.0.0] - 2026-02-04
 
 ### Added
