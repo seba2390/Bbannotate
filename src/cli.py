@@ -127,8 +127,8 @@ def start(
     if not no_browser:
         def open_browser_when_ready() -> None:
             """Wait for server to be ready, then open browser."""
-            import urllib.request
             import urllib.error
+            import urllib.request
 
             health_url = f"{url}/api/health"
             max_attempts = 50  # 5 seconds max wait
