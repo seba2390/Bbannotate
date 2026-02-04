@@ -1,0 +1,9 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "include": ["src"],
+  "exclude": ["**/node_modules", "**/__pycache__", ".venv"],
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "pythonVersion": "3.12"
+}
