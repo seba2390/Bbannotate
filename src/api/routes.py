@@ -1,5 +1,6 @@
 """FastAPI routes for the annotation API."""
 
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -19,9 +20,26 @@ from src.services.project_service import Project, ProjectCreate, ProjectService
 
 router = APIRouter()
 
-# Default directories
-PROJECTS_DIR = Path("./projects")
-DATA_DIR = Path("./data")  # Legacy fallback
+
+def get_projects_dir() -> Path:
+    """Get the projects directory from environment or default."""
+    env_path = os.environ.get("BBANNOTATE_PROJECTS_DIR")
+    if env_path:
+        return Path(env_path)
+    return Path.cwd() / "projects"
+
+
+def get_data_dir() -> Path:
+    """Get the data directory from environment or default."""
+    env_path = os.environ.get("BBANNOTATE_DATA_DIR")
+    if env_path:
+        return Path(env_path)
+    return Path.cwd() / "data"
+
+
+# Default directories (use functions for dynamic resolution)
+PROJECTS_DIR = get_projects_dir()
+DATA_DIR = get_data_dir()  # Legacy fallback
 
 # Global state for current project
 _current_project_id: str | None = None
@@ -29,19 +47,19 @@ _current_project_id: str | None = None
 
 def get_project_service() -> ProjectService:
     """Dependency for project service."""
-    return ProjectService(PROJECTS_DIR)
+    return ProjectService(get_projects_dir())
 
 
 def get_annotation_service() -> AnnotationService:
     """Dependency for annotation service - uses current project's data directory."""
     global _current_project_id
     if _current_project_id:
-        project_service = ProjectService(PROJECTS_DIR)
+        project_service = ProjectService(get_projects_dir())
         data_dir = project_service.get_project_data_dir(_current_project_id)
         if data_dir:
             return AnnotationService(data_dir)
     # Fallback to legacy data directory
-    return AnnotationService(DATA_DIR)
+    return AnnotationService(get_data_dir())
 
 
 def get_export_service(
@@ -137,8 +155,8 @@ def list_images(
 
 @router.post("/images", response_model=ImageInfo)
 async def upload_image(
-    file: UploadFile = File(...),
-    service: AnnotationService = Depends(get_annotation_service),
+    file: Annotated[UploadFile, File(...)],
+    service: Annotated[AnnotationService, Depends(get_annotation_service)],
 ) -> ImageInfo:
     """Upload a new image."""
     if not file.filename:

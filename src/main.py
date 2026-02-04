@@ -7,13 +7,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from src.api.routes import DATA_DIR, router
+from src import __version__
+from src.api.routes import get_data_dir, router
 
 # Create FastAPI app
 app = FastAPI(
     title="Bounding Box Annotation Tool",
     description="A lightweight annotation tool for grocery flyer product detection",
-    version="1.0.0",
+    version=__version__,
 )
 
 # Configure CORS for frontend development
@@ -34,7 +35,7 @@ app.add_middleware(
 app.include_router(router, prefix="/api")
 
 # Ensure data directory exists
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+get_data_dir().mkdir(parents=True, exist_ok=True)
 
 # Serve frontend static files in production
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"

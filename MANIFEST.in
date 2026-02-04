@@ -1,0 +1,33 @@
+# Include frontend build artifacts
+recursive-include frontend/dist *
+
+# Include documentation
+include README.md
+include LICENSE
+include CHANGELOG.md
+
+# Include type hints marker
+include src/py.typed
+
+# Exclude development and test files
+exclude Makefile
+exclude pyrightconfig.json
+recursive-exclude tests *
+recursive-exclude htmlcov *
+recursive-exclude data *
+recursive-exclude projects *
+recursive-exclude .github *
+recursive-exclude frontend/node_modules *
+recursive-exclude frontend/src *
+exclude frontend/package-lock.json
+exclude frontend/tsconfig.json
+exclude frontend/tsconfig.node.json
+exclude frontend/vite.config.ts
+exclude frontend/tailwind.config.js
+exclude frontend/postcss.config.js
+
+# Exclude Python cache
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *.so
+global-exclude .DS_Store

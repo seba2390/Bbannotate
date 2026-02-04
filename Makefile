@@ -29,6 +29,7 @@ clean:
 	rm -rf exports
 	rm -f package-lock.json
 	rm -f $(FRONTEND_DIR)/package-lock.json
+	rm -rf dist
 	@echo "Clean complete!"
 
 # Install dependencies (Python)
@@ -42,9 +43,8 @@ install:
 	@echo "Creating new virtual environment..."
 	@$(PYTHON) -m venv $(VENV)
 	@echo "New virtual environment created."
-	@echo "Installing Python packages..."
-	@$(VENV_BIN)/pip install -r requirements.txt
-	@echo "Python packages installed."
+	@echo "Installing package in editable mode with dev dependencies..."
+	@$(VENV_BIN)/pip install -e ".[dev]"
 	@echo "Installation complete!"
 
 # Install frontend dependencies
@@ -145,3 +145,24 @@ frontend-format:
 # Run all checks
 check-all: type-check fix format test frontend-type-check frontend-lint
 	@echo "All checks complete!"
+
+# Build package for distribution
+build:
+	@echo "Building package..."
+	$(VENV_BIN)/pip install build
+	$(VENV_BIN)/python -m build
+	@echo "Package built in dist/"
+
+# Publish to PyPI (requires twine and PyPI credentials)
+publish:
+	@echo "Publishing to PyPI..."
+	$(VENV_BIN)/pip install twine
+	$(VENV_BIN)/twine upload dist/*
+	@echo "Published to PyPI!"
+
+# Publish to TestPyPI (for testing)
+publish-test:
+	@echo "Publishing to TestPyPI..."
+	$(VENV_BIN)/pip install twine
+	$(VENV_BIN)/twine upload --repository testpypi dist/*
+	@echo "Published to TestPyPI!"

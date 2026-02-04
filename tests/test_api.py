@@ -23,10 +23,15 @@ def temp_data_dir(monkeypatch: pytest.MonkeyPatch) -> Path:
     """Create temporary data directory for testing."""
     with tempfile.TemporaryDirectory() as tmpdir:
         data_dir = Path(tmpdir)
-        # Monkeypatch the DATA_DIR in routes
+        projects_dir = Path(tmpdir) / "projects"
+        projects_dir.mkdir()
+        # Use environment variables for path configuration
+        monkeypatch.setenv("BBANNOTATE_DATA_DIR", str(data_dir))
+        monkeypatch.setenv("BBANNOTATE_PROJECTS_DIR", str(projects_dir))
+        # Reset global project state
         from src.api import routes
 
-        monkeypatch.setattr(routes, "DATA_DIR", data_dir)
+        monkeypatch.setattr(routes, "_current_project_id", None)
         yield data_dir
 
 
@@ -51,9 +56,7 @@ def large_image() -> bytes:
 class TestProjectEndpoints:
     """Tests for project-level endpoints."""
 
-    def test_get_project_info(
-        self, client: TestClient, temp_data_dir: Path
-    ) -> None:
+    def test_get_project_info(self, client: TestClient, temp_data_dir: Path) -> None:
         """Test getting project info."""
         response = client.get("/api/project")
         assert response.status_code == 200
@@ -89,9 +92,7 @@ class TestProjectEndpoints:
 class TestImageEndpoints:
     """Tests for image-related endpoints."""
 
-    def test_list_images_empty(
-        self, client: TestClient, temp_data_dir: Path
-    ) -> None:
+    def test_list_images_empty(self, client: TestClient, temp_data_dir: Path) -> None:
         """Test listing images when none exist."""
         response = client.get("/api/images")
         assert response.status_code == 200
@@ -223,9 +224,7 @@ class TestAnnotationEndpoints:
 
         # Update
         update = {"label": "price", "class_id": 1}
-        response = client.put(
-            f"/api/images/test.png/annotations/{ann_id}", json=update
-        )
+        response = client.put(f"/api/images/test.png/annotations/{ann_id}", json=update)
         assert response.status_code == 200
         assert response.json()["label"] == "price"
         assert response.json()["class_id"] == 1
@@ -472,9 +471,7 @@ class TestClearAndCopyAnnotations:
 class TestExportEndpoints:
     """Tests for export functionality."""
 
-    def test_export_yolo_empty(
-        self, client: TestClient, temp_data_dir: Path
-    ) -> None:
+    def test_export_yolo_empty(self, client: TestClient, temp_data_dir: Path) -> None:
         """Test YOLO export with no data."""
         response = client.post("/api/export/yolo")
         assert response.status_code == 200
@@ -497,7 +494,9 @@ class TestExportEndpoints:
             }
             client.post(f"/api/images/image_{i}.png/annotations", json=annotation)
 
-        response = client.post("/api/export/yolo?train_split=0.7&val_split=0.2&test_split=0.1")
+        response = client.post(
+            "/api/export/yolo?train_split=0.7&val_split=0.2&test_split=0.1"
+        )
         assert response.status_code == 200
 
         # Verify it's a valid ZIP
@@ -521,9 +520,7 @@ class TestExportEndpoints:
         response = client.post("/api/export/yolo?train_split=1.0")
         assert response.status_code == 422
 
-    def test_export_coco_empty(
-        self, client: TestClient, temp_data_dir: Path
-    ) -> None:
+    def test_export_coco_empty(self, client: TestClient, temp_data_dir: Path) -> None:
         """Test COCO export with no data."""
         response = client.post("/api/export/coco")
         assert response.status_code == 200

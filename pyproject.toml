@@ -1,0 +1,123 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bbannotate"
+dynamic = ["version"]
+description = "A lightweight bounding box annotation tool for image datasets with YOLO/COCO/Pascal VOC export"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [
+    { name = "Sebastian Yde Madsen" }
+]
+keywords = [
+    "annotation",
+    "bounding-box",
+    "object-detection",
+    "yolo",
+    "coco",
+    "pascal-voc",
+    "image-annotation",
+    "machine-learning",
+    "computer-vision",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "python-multipart>=0.0.6",
+    "pillow>=10.2.0",
+    "aiofiles>=23.2.1",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pyright",
+    "pytest",
+    "pytest-cov",
+    "httpx",
+]
+
+[project.scripts]
+bbannotate = "src.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/seba2390/bbannotate"
+Documentation = "https://github.com/seba2390/bbannotate#readme"
+Repository = "https://github.com/seba2390/bbannotate"
+Issues = "https://github.com/seba2390/bbannotate/issues"
+
+[tool.hatch.version]
+path = "src/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/frontend/dist",
+]
+exclude = [
+    "/.github",
+    "/tests",
+    "/htmlcov",
+    "/data",
+    "/projects",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.pyright]
+include = ["src"]
+exclude = ["**/__pycache__"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+python_files = "test_*.py"
+python_functions = "test_*"
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = ["src/cli.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

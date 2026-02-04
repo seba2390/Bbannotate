@@ -2,58 +2,139 @@
   <img src="frontend/public/logo.png" alt="Bbannotate Logo" width="400">
 </p>
 
-# Bbannotate
+<p align="center">
+  <a href="https://pypi.org/project/bbannotate/"><img src="https://img.shields.io/pypi/v/bbannotate" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/bbannotate/"><img src="https://img.shields.io/pypi/pyversions/bbannotate" alt="Python versions"></a>
+  <a href="https://github.com/sebastianydemadsen/bbannotate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sebastianydemadsen/bbannotate" alt="License"></a>
+</p>
 
-Bounding box annotation tool for image datasets. React/TypeScript frontend, FastAPI backend, YOLO export.
+A lightweight bounding box annotation tool for image datasets. Built with React/TypeScript frontend and FastAPI backend. Export to YOLO, COCO, Pascal VOC, and more.
 
-## Setup
+## Features
+
+- 🖼️ **Multi-format support** — PNG, JPEG, WebP, BMP
+- 📁 **Project management** — Organize annotations by project
+- 🏷️ **Custom labels** — Define your own class labels
+- ⌨️ **Keyboard shortcuts** — Fast annotation workflow
+- 📤 **Multiple export formats** — YOLO, COCO, Pascal VOC, CreateML, CSV
+- 🔄 **Train/Val/Test split** — Automatic dataset splitting for YOLO export
+
+## Installation
 
 ```bash
-make install && make frontend-install
+pip install bbannotate
 ```
 
-## Run
+### Requirements
+
+- Python 3.12+
+- Node.js (only for frontend development)
+
+## Quick Start
 
 ```bash
-make run
+# Start the annotation server
+bbannotate start
+
+# Opens http://127.0.0.1:8000 in your browser
 ```
 
-Open http://localhost:5173
+### CLI Options
 
-## Shortcuts
+```bash
+bbannotate start [OPTIONS]
+
+Options:
+  -h, --host TEXT        Host to bind the server to [default: 127.0.0.1]
+  -p, --port INTEGER     Port to bind the server to [default: 8000]
+  --no-browser           Don't open browser automatically
+  -r, --reload           Enable auto-reload for development
+  -d, --data-dir PATH    Directory for storing data [default: ./data]
+  --projects-dir PATH    Directory for storing projects [default: ./projects]
+  -v, --version          Show version and exit
+  --help                 Show help and exit
+```
+
+### Other Commands
+
+```bash
+bbannotate info            # Show installation info
+bbannotate build-frontend  # Build frontend assets (development)
+```
+
+## Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
 | `D` | Draw mode |
-| `V` | Select mode |
+| `S` | Select mode |
+| `Space` | Pan mode |
 | `←` `→` | Navigate images |
-| `Del` | Delete annotation |
-| `Esc` | Deselect |
+| `1-9` | Select label by index |
+| `Del` / `Backspace` | Delete annotation |
+| `Esc` | Deselect / Cancel |
 
-## Export
+## Export Formats
 
-- **YOLO**: `POST /api/export/yolo` — ZIP with train/val split
-- **COCO**: `POST /api/export/coco` — COCO JSON format
+| Format | Description |
+|--------|-------------|
+| **YOLO** | ZIP with train/val/test split, `data.yaml`, normalized coordinates |
+| **COCO** | COCO JSON format with categories, images, and annotations |
+| **Pascal VOC** | XML files per image with absolute coordinates |
+| **CreateML** | Apple CreateML JSON format |
+| **CSV** | Simple CSV with image, label, and bbox columns |
 
-## Commands
+## Configuration
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `BBANNOTATE_DATA_DIR` | Override default data directory |
+| `BBANNOTATE_PROJECTS_DIR` | Override default projects directory |
+
+## Development
+
+### Setup
+
+```bash
+git clone https://github.com/sebastianydemadsen/bbannotate.git
+cd bbannotate
+make install        # Install with dev dependencies
+make frontend-install  # Install frontend dependencies
+```
+
+### Development Commands
 
 | Command | Description |
 |---------|-------------|
-| `make run` | Start application |
+| `make run` | Start full application (backend + frontend) |
+| `make backend-dev` | Start backend only with auto-reload |
+| `make frontend-dev` | Start frontend dev server |
+| `make stop` | Stop all servers |
 | `make test` | Run tests |
-| `make test-cov` | Tests with coverage |
-| `make check-all` | Lint + type check + test |
+| `make test-cov` | Run tests with coverage report |
+| `make type-check` | Run pyright type checking |
+| `make format` | Format code with ruff |
+| `make check-all` | Run all checks (lint, type, test) |
+| `make build` | Build package for distribution |
 | `make clean` | Remove build artifacts |
 
-## Structure
+### Project Structure
 
 ```
-src/           # FastAPI backend
-frontend/      # React frontend
-data/          # Images + annotations (runtime)
-tests/         # 118 tests, 95% coverage
+src/               # Python package (FastAPI backend)
+  api/             # API routes
+  models/          # Pydantic models
+  services/        # Business logic
+  cli.py           # CLI entry point
+frontend/          # React/TypeScript frontend
+  src/
+    components/    # UI components
+    hooks/         # React hooks
+tests/             # Test suite (145 tests)
 ```
 
 ## License
 
-MIT
+[MIT](LICENSE)

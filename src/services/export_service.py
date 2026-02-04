@@ -112,9 +112,7 @@ class ExportService:
         # Export test set
         if test_images and test_labels:
             for filename in test_files:
-                self._export_yolo_image(
-                    filename, test_images, test_labels, label_to_id
-                )
+                self._export_yolo_image(filename, test_images, test_labels, label_to_id)
 
         # Create data.yaml
         data_yaml = output_dir / "data.yaml"
@@ -148,7 +146,10 @@ class ExportService:
         for ann in annotations:
             class_id = label_to_id.get(ann.label, ann.class_id)
             # YOLO format: class_id center_x center_y width height (all normalized)
-            line = f"{class_id} {ann.bbox.x:.6f} {ann.bbox.y:.6f} {ann.bbox.width:.6f} {ann.bbox.height:.6f}"
+            line = (
+                f"{class_id} {ann.bbox.x:.6f} {ann.bbox.y:.6f} "
+                f"{ann.bbox.width:.6f} {ann.bbox.height:.6f}"
+            )
             lines.append(line)
 
         label_path.write_text("\n".join(lines))
@@ -328,18 +329,10 @@ class ExportService:
                 ET.SubElement(obj, "difficult").text = "0"
 
                 # Convert from normalized center format to absolute corner format
-                x_min = int(
-                    (ann.bbox.x - ann.bbox.width / 2) * metadata.image.width
-                )
-                y_min = int(
-                    (ann.bbox.y - ann.bbox.height / 2) * metadata.image.height
-                )
-                x_max = int(
-                    (ann.bbox.x + ann.bbox.width / 2) * metadata.image.width
-                )
-                y_max = int(
-                    (ann.bbox.y + ann.bbox.height / 2) * metadata.image.height
-                )
+                x_min = int((ann.bbox.x - ann.bbox.width / 2) * metadata.image.width)
+                y_min = int((ann.bbox.y - ann.bbox.height / 2) * metadata.image.height)
+                x_max = int((ann.bbox.x + ann.bbox.width / 2) * metadata.image.width)
+                y_max = int((ann.bbox.y + ann.bbox.height / 2) * metadata.image.height)
 
                 bndbox = ET.SubElement(obj, "bndbox")
                 ET.SubElement(bndbox, "xmin").text = str(max(0, x_min))
@@ -420,9 +413,7 @@ class ExportService:
                     }
                 )
 
-            createml_data.append(
-                {"image": filename, "annotations": image_annotations}
-            )
+            createml_data.append({"image": filename, "annotations": image_annotations})
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with output_path.open("w") as f:

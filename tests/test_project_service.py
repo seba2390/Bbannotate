@@ -128,8 +128,18 @@ class TestProjectService:
         annotation_data = {
             "image": {"filename": "test.jpg", "width": 100, "height": 100},
             "annotations": [
-                {"id": "1", "label": "product", "class_id": 0, "bbox": {"x": 0.5, "y": 0.5, "width": 0.1, "height": 0.1}},
-                {"id": "2", "label": "price", "class_id": 1, "bbox": {"x": 0.3, "y": 0.3, "width": 0.1, "height": 0.1}},
+                {
+                    "id": "1",
+                    "label": "product",
+                    "class_id": 0,
+                    "bbox": {"x": 0.5, "y": 0.5, "width": 0.1, "height": 0.1},
+                },
+                {
+                    "id": "2",
+                    "label": "price",
+                    "class_id": 1,
+                    "bbox": {"x": 0.3, "y": 0.3, "width": 0.1, "height": 0.1},
+                },
             ],
         }
         with annotation_file.open("w") as f:

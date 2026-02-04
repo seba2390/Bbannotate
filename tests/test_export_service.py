@@ -156,7 +156,9 @@ class TestYoloExport:
         """Test train/validation/test split."""
         create_test_dataset(annotation_service, sample_image_bytes, num_images=10)
         output_dir = temp_data_dir / "yolo_export"
-        export_service.export_yolo(output_dir, train_split=0.7, val_split=0.2, test_split=0.1)
+        export_service.export_yolo(
+            output_dir, train_split=0.7, val_split=0.2, test_split=0.1
+        )
 
         train_images = list((output_dir / "train" / "images").glob("*.png"))
         val_images = list((output_dir / "val" / "images").glob("*.png"))
@@ -181,7 +183,10 @@ class TestYoloExport:
         )
 
         output_dir = temp_data_dir / "yolo_export"
-        export_service.export_yolo(output_dir, train_split=1.0, val_split=0.0, test_split=0.0)  # All to train
+        # All to train
+        export_service.export_yolo(
+            output_dir, train_split=1.0, val_split=0.0, test_split=0.0
+        )
 
         label_file = output_dir / "train" / "labels" / "test.txt"
         assert label_file.exists()
@@ -201,7 +206,9 @@ class TestYoloExport:
         )
 
         output_dir = temp_data_dir / "yolo_export"
-        export_service.export_yolo(output_dir, train_split=1.0, val_split=0.0, test_split=0.0)
+        export_service.export_yolo(
+            output_dir, train_split=1.0, val_split=0.0, test_split=0.0
+        )
 
         label_file = output_dir / "train" / "labels" / "test.txt"
         content = label_file.read_text().strip()
@@ -232,7 +239,9 @@ class TestYoloExport:
             )
 
         output_dir = temp_data_dir / "yolo_export"
-        export_service.export_yolo(output_dir, train_split=1.0, val_split=0.0, test_split=0.0)
+        export_service.export_yolo(
+            output_dir, train_split=1.0, val_split=0.0, test_split=0.0
+        )
 
         label_file = output_dir / "train" / "labels" / "test.txt"
         lines = label_file.read_text().strip().split("\n")
@@ -292,13 +301,19 @@ class TestYoloZipExport:
     ) -> None:
         """Test that train/val/test split parameters work."""
         create_test_dataset(annotation_service, sample_image_bytes, num_images=10)
-        zip_path = export_service.export_yolo_zip(train_split=0.5, val_split=0.3, test_split=0.2)
+        zip_path = export_service.export_yolo_zip(
+            train_split=0.5, val_split=0.3, test_split=0.2
+        )
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            train_images = [n for n in names if "train/images/" in n and n.endswith(".png")]
+            train_images = [
+                n for n in names if "train/images/" in n and n.endswith(".png")
+            ]
             val_images = [n for n in names if "val/images/" in n and n.endswith(".png")]
-            test_images = [n for n in names if "test/images/" in n and n.endswith(".png")]
+            test_images = [
+                n for n in names if "test/images/" in n and n.endswith(".png")
+            ]
             assert len(train_images) == 5
             assert len(val_images) == 3
             assert len(test_images) == 2
