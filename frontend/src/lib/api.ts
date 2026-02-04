@@ -199,9 +199,7 @@ export function getExportUrl(
   }
 }
 
-export function getYoloExportUrl(
-  split: DataSplit = { train: 0.7, val: 0.2, test: 0.1 }
-): string {
+export function getYoloExportUrl(split: DataSplit = { train: 0.7, val: 0.2, test: 0.1 }): string {
   return `/api/export/yolo?train_split=${split.train}&val_split=${split.val}&test_split=${split.test}`;
 }
 

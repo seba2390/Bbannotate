@@ -96,11 +96,7 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
                 'radial-gradient(ellipse 80% 80% at center, black 40%, transparent 100%)',
             }}
           >
-            <img
-              src="/logo.png"
-              alt="Bbannotate Logo"
-              className="h-full w-full object-contain"
-            />
+            <img src="/logo.png" alt="Bbannotate Logo" className="h-full w-full object-contain" />
           </div>
         </div>
 

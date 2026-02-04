@@ -23,7 +23,11 @@ function loadLabels(): string[] {
   if (stored) {
     try {
       const parsed = JSON.parse(stored) as unknown;
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((l) => typeof l === 'string')) {
+      if (
+        Array.isArray(parsed) &&
+        parsed.length > 0 &&
+        parsed.every((l) => typeof l === 'string')
+      ) {
         return parsed as string[];
       }
     } catch {
@@ -151,7 +155,11 @@ function App(): JSX.Element {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
       // Ignore if typing in input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLSelectElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
         return;
       }
 
@@ -250,14 +258,17 @@ function App(): JSX.Element {
   }, []);
 
   // Handle label updates from LabelManager
-  const handleLabelsChange = useCallback((newLabels: string[]): void => {
-    setLabels(newLabels);
-    saveLabels(newLabels);
-    // If current label was removed, switch to first label
-    if (!newLabels.includes(currentLabel) && newLabels.length > 0) {
-      setCurrentLabel(newLabels[0] ?? 'product');
-    }
-  }, [currentLabel]);
+  const handleLabelsChange = useCallback(
+    (newLabels: string[]): void => {
+      setLabels(newLabels);
+      saveLabels(newLabels);
+      // If current label was removed, switch to first label
+      if (!newLabels.includes(currentLabel) && newLabels.length > 0) {
+        setCurrentLabel(newLabels[0] ?? 'product');
+      }
+    },
+    [currentLabel]
+  );
 
   const handleDeleteImage = useCallback(
     (filename: string) => {
