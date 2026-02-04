@@ -16,8 +16,10 @@ function getLabelColor(label: string): string {
   return LABEL_COLORS[label.toLowerCase()] ?? LABEL_COLORS['default'] ?? '#8b5cf6';
 }
 
-/** Canvas tool modes including pan */
-type CanvasTool = 'select' | 'draw' | 'pan';
+/** Edge pan threshold in pixels (distance from edge to trigger auto-pan) */
+const EDGE_PAN_THRESHOLD = 50;
+/** Auto-pan speed in pixels per frame */
+const EDGE_PAN_SPEED = 15;
 
 interface AnnotationCanvasProps {
   imageUrl: string | null;
@@ -30,6 +32,7 @@ interface AnnotationCanvasProps {
   onAddAnnotation: (rect: DrawingRect, imageWidth: number, imageHeight: number) => void;
   onUpdateBbox: (annotationId: string, bbox: BoundingBox) => void;
   onDeleteAnnotation: (annotationId: string) => void;
+  onToolModeChange: (mode: ToolMode) => void;
 }
 
 /**
@@ -43,7 +46,8 @@ export function AnnotationCanvas({
   onSelectAnnotation,
   onAddAnnotation,
   onUpdateBbox,
-  onDeleteAnnotation,
+  onDeleteAnnotation: _onDeleteAnnotation, // Used externally via keyboard shortcuts in App.tsx
+  onToolModeChange,
 }: AnnotationCanvasProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -56,21 +60,15 @@ export function AnnotationCanvas({
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawingRect, setDrawingRect] = useState<DrawingRect | null>(null);
 
-  // Canvas-specific tool and zoom state
-  const [canvasTool, setCanvasTool] = useState<CanvasTool>('draw');
+  // Canvas zoom and pan state
   const [zoom, setZoom] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPosition, setLastPanPosition] = useState({ x: 0, y: 0 });
 
-  // Sync canvas tool with parent tool mode
-  useEffect(() => {
-    if (toolMode === 'draw') {
-      setCanvasTool('draw');
-    } else if (toolMode === 'select') {
-      setCanvasTool('select');
-    }
-  }, [toolMode]);
+  // For auto-pan during drawing
+  const autoPanRef = useRef<number | null>(null);
+  const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Load image when URL changes
   useEffect(() => {
@@ -181,23 +179,32 @@ export function AnnotationCanvas({
     }
   }, [selectedId, toolMode, annotations]);
 
-  // Keyboard handlers
+  // Handle Escape to cancel drawing (other keys handled in App.tsx)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedId) {
-          onDeleteAnnotation(selectedId);
-        }
-      } else if (e.key === 'Escape') {
-        onSelectAnnotation(null);
+      if (e.key === 'Escape' && isDrawing) {
         setIsDrawing(false);
         setDrawingRect(null);
+        stopAutoPan();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, onDeleteAnnotation, onSelectAnnotation]);
+  }, [isDrawing]);
+
+  // Stop auto-pan animation
+  const stopAutoPan = useCallback((): void => {
+    if (autoPanRef.current !== null) {
+      cancelAnimationFrame(autoPanRef.current);
+      autoPanRef.current = null;
+    }
+  }, []);
+
+  // Cleanup auto-pan on unmount
+  useEffect(() => {
+    return () => stopAutoPan();
+  }, [stopAutoPan]);
 
   // Convert annotation bbox to pixel coordinates (in image space, Stage handles scaling)
   const bboxToRect = useCallback(
@@ -250,14 +257,14 @@ export function AnnotationCanvas({
     if (!screenPos) return;
 
     // Handle pan mode
-    if (canvasTool === 'pan') {
+    if (toolMode === 'pan') {
       setIsPanning(true);
       setLastPanPosition({ x: screenPos.x, y: screenPos.y });
       return;
     }
 
     // Handle draw mode
-    if (canvasTool !== 'draw' || !image) return;
+    if (toolMode !== 'draw' || !image) return;
 
     const imagePos = getImagePosition(stage);
     if (!imagePos) return;
@@ -272,6 +279,84 @@ export function AnnotationCanvas({
     onSelectAnnotation(null);
   };
 
+  // Calculate auto-pan direction based on screen position
+  const calculateAutoPanDelta = useCallback(
+    (screenPos: { x: number; y: number }): { dx: number; dy: number } => {
+      let dx = 0;
+      let dy = 0;
+
+      // Left edge
+      if (screenPos.x < EDGE_PAN_THRESHOLD) {
+        dx = EDGE_PAN_SPEED;
+      }
+      // Right edge
+      if (screenPos.x > stageSize.width - EDGE_PAN_THRESHOLD) {
+        dx = -EDGE_PAN_SPEED;
+      }
+      // Top edge (accounting for toolbar area)
+      if (screenPos.y < EDGE_PAN_THRESHOLD + 60) {
+        dy = EDGE_PAN_SPEED;
+      }
+      // Bottom edge
+      if (screenPos.y > stageSize.height - EDGE_PAN_THRESHOLD) {
+        dy = -EDGE_PAN_SPEED;
+      }
+
+      return { dx, dy };
+    },
+    [stageSize]
+  );
+
+  // Auto-pan animation frame
+  const runAutoPan = useCallback((): void => {
+    const mousePos = lastMousePosRef.current;
+    if (!mousePos || !isDrawing || !drawingRect) {
+      stopAutoPan();
+      return;
+    }
+
+    const { dx, dy } = calculateAutoPanDelta(mousePos);
+
+    if (dx !== 0 || dy !== 0) {
+      // Update stage position (pan the view)
+      setStagePosition((prev) => ({
+        x: prev.x + dx,
+        y: prev.y + dy,
+      }));
+
+      // Update drawing rect to follow the pan (keep visual position constant)
+      // We need to adjust the rect's size to compensate for the pan
+      setDrawingRect((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          width: prev.width - dx / scale,
+          height: prev.height - dy / scale,
+        };
+      });
+
+      // Continue animation
+      autoPanRef.current = requestAnimationFrame(runAutoPan);
+    } else {
+      stopAutoPan();
+    }
+  }, [isDrawing, drawingRect, calculateAutoPanDelta, stopAutoPan, scale]);
+
+  // Start auto-pan if needed
+  const startAutoPanIfNeeded = useCallback(
+    (screenPos: { x: number; y: number }): void => {
+      lastMousePosRef.current = screenPos;
+      const { dx, dy } = calculateAutoPanDelta(screenPos);
+
+      if ((dx !== 0 || dy !== 0) && autoPanRef.current === null) {
+        autoPanRef.current = requestAnimationFrame(runAutoPan);
+      } else if (dx === 0 && dy === 0) {
+        stopAutoPan();
+      }
+    },
+    [calculateAutoPanDelta, runAutoPan, stopAutoPan]
+  );
+
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>): void => {
     const stage = e.target.getStage();
     if (!stage) return;
@@ -280,7 +365,7 @@ export function AnnotationCanvas({
     if (!screenPos) return;
 
     // Handle panning
-    if (isPanning && canvasTool === 'pan') {
+    if (isPanning && toolMode === 'pan') {
       const dx = screenPos.x - lastPanPosition.x;
       const dy = screenPos.y - lastPanPosition.y;
       setStagePosition((prev) => ({
@@ -297,14 +382,22 @@ export function AnnotationCanvas({
     const imagePos = getImagePosition(stage);
     if (!imagePos) return;
 
+    // Update drawing rect
     setDrawingRect({
       ...drawingRect,
       width: imagePos.x - drawingRect.x,
       height: imagePos.y - drawingRect.y,
     });
+
+    // Check if we need to auto-pan
+    startAutoPanIfNeeded(screenPos);
   };
 
   const handleMouseUp = (): void => {
+    // Stop any auto-pan in progress
+    stopAutoPan();
+    lastMousePosRef.current = null;
+
     // Handle pan end
     if (isPanning) {
       setIsPanning(false);
@@ -384,7 +477,7 @@ export function AnnotationCanvas({
 
   // Get cursor style based on current tool
   const getCursor = (): string => {
-    switch (canvasTool) {
+    switch (toolMode) {
       case 'pan':
         return isPanning ? 'grabbing' : 'grab';
       case 'draw':
@@ -431,13 +524,13 @@ export function AnnotationCanvas({
       <div className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded-lg bg-white dark:bg-gray-800 p-1 shadow-lg border border-gray-200 dark:border-gray-700">
         {/* Tool buttons */}
         <button
-          onClick={() => setCanvasTool('select')}
+          onClick={() => onToolModeChange('select')}
           className={`p-2 rounded-md transition-colors ${
-            canvasTool === 'select'
+            toolMode === 'select'
               ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400'
               : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
           }`}
-          title="Select (V)"
+          title="Select (S)"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -449,9 +542,9 @@ export function AnnotationCanvas({
           </svg>
         </button>
         <button
-          onClick={() => setCanvasTool('draw')}
+          onClick={() => onToolModeChange('draw')}
           className={`p-2 rounded-md transition-colors ${
-            canvasTool === 'draw'
+            toolMode === 'draw'
               ? 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400'
               : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
           }`}
@@ -467,13 +560,13 @@ export function AnnotationCanvas({
           </svg>
         </button>
         <button
-          onClick={() => setCanvasTool('pan')}
+          onClick={() => onToolModeChange('pan')}
           className={`p-2 rounded-md transition-colors ${
-            canvasTool === 'pan'
+            toolMode === 'pan'
               ? 'bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400'
               : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
           }`}
-          title="Pan (Space + Drag)"
+          title="Pan (Space)"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path

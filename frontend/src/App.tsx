@@ -6,6 +6,7 @@ import {
   AnnotationList,
   Toolbar,
   ProjectManager,
+  LabelManager,
 } from '@/components';
 import { useAnnotations, useImages } from '@/hooks';
 import { getImageUrl, getYoloExportUrl, getProjectInfo, closeProject } from '@/lib/api';
@@ -14,14 +15,39 @@ import type { ToolMode, DrawingRect, BoundingBox, Project } from '@/types';
 /** Default labels for grocery flyer annotation */
 const DEFAULT_LABELS = ['product', 'price', 'brand', 'promo'];
 
+/** Load labels from localStorage or use defaults */
+function loadLabels(): string[] {
+  if (typeof window === 'undefined') return DEFAULT_LABELS;
+  const stored = localStorage.getItem('annotationLabels');
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored) as unknown;
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((l) => typeof l === 'string')) {
+        return parsed as string[];
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+  return DEFAULT_LABELS;
+}
+
+/** Save labels to localStorage */
+function saveLabels(labels: string[]): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('annotationLabels', JSON.stringify(labels));
+  }
+}
+
 /**
  * Main application component for bounding box annotation.
  */
 function App(): JSX.Element {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>('draw');
-  const [currentLabel, setCurrentLabel] = useState(DEFAULT_LABELS[0] ?? 'product');
-  const [labels] = useState(DEFAULT_LABELS);
+  const [labels, setLabels] = useState<string[]>(loadLabels);
+  const [currentLabel, setCurrentLabel] = useState(labels[0] ?? 'product');
+  const [showLabelManager, setShowLabelManager] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return (
@@ -107,22 +133,38 @@ function App(): JSX.Element {
     loadProgress();
   }, [images, annotations]);
 
+  // Handle delete annotation (exposed for keyboard shortcut)
+  const handleDeleteSelected = useCallback((): void => {
+    if (selectedId && currentImage) {
+      deleteAnnotation(currentImage, selectedId);
+    }
+  }, [selectedId, currentImage, deleteAnnotation]);
+
+  // Handle deselect (exposed for keyboard shortcut)
+  const handleDeselect = useCallback((): void => {
+    selectAnnotation(null);
+  }, [selectAnnotation]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
       // Ignore if typing in input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
 
       switch (e.key) {
-        case 'v':
-        case 'V':
+        case 's':
+        case 'S':
           setToolMode('select');
           break;
         case 'd':
         case 'D':
           setToolMode('draw');
+          break;
+        case ' ':
+          e.preventDefault(); // Prevent page scroll
+          setToolMode('pan');
           break;
         case 'ArrowLeft':
           prevImage();
@@ -130,12 +172,34 @@ function App(): JSX.Element {
         case 'ArrowRight':
           nextImage();
           break;
+        case 'Delete':
+        case 'Backspace':
+          handleDeleteSelected();
+          break;
+        case 'Escape':
+          handleDeselect();
+          break;
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9': {
+          const idx = parseInt(e.key, 10) - 1;
+          if (idx < labels.length) {
+            setCurrentLabel(labels[idx] ?? currentLabel);
+          }
+          break;
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [prevImage, nextImage]);
+  }, [prevImage, nextImage, handleDeleteSelected, handleDeselect, labels, currentLabel]);
 
   const handleAddAnnotation = useCallback(
     (rect: DrawingRect, imageWidth: number, imageHeight: number) => {
@@ -183,6 +247,16 @@ function App(): JSX.Element {
     // Open export download in new tab
     window.open(getYoloExportUrl(0.8), '_blank');
   }, []);
+
+  // Handle label updates from LabelManager
+  const handleLabelsChange = useCallback((newLabels: string[]): void => {
+    setLabels(newLabels);
+    saveLabels(newLabels);
+    // If current label was removed, switch to first label
+    if (!newLabels.includes(currentLabel) && newLabels.length > 0) {
+      setCurrentLabel(newLabels[0] ?? 'product');
+    }
+  }, [currentLabel]);
 
   const handleDeleteImage = useCallback(
     (filename: string) => {
@@ -274,9 +348,19 @@ function App(): JSX.Element {
         onNextImage={nextImage}
         onClearAnnotations={handleClearAnnotations}
         onExportYolo={handleExportYolo}
+        onManageLabels={() => setShowLabelManager(true)}
         imageIndex={currentIndex}
         imageCount={images.length}
       />
+
+      {/* Label Manager Modal */}
+      {showLabelManager && (
+        <LabelManager
+          labels={labels}
+          onLabelsChange={handleLabelsChange}
+          onClose={() => setShowLabelManager(false)}
+        />
+      )}
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
@@ -309,6 +393,7 @@ function App(): JSX.Element {
             onAddAnnotation={handleAddAnnotation}
             onUpdateBbox={handleUpdateBbox}
             onDeleteAnnotation={handleDeleteAnnotation}
+            onToolModeChange={setToolMode}
           />
         </main>
 
@@ -334,11 +419,15 @@ function App(): JSX.Element {
       <footer className="border-t border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
         <div className="flex items-center justify-between">
           <span>
-            {loading ? 'Loading...' : 'Ready'} | Press{' '}
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">D</kbd> to draw,{' '}
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">V</kbd> to select,{' '}
+            {loading ? 'Loading...' : 'Ready'} |{' '}
+            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">D</kbd> Draw{' '}
+            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">S</kbd> Select{' '}
+            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">Space</kbd> Pan{' '}
             <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">←</kbd>
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">→</kbd> to navigate
+            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">→</kbd> Navigate{' '}
+            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">Del</kbd> Delete{' '}
+            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">Esc</kbd> Deselect{' '}
+            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">1-9</kbd> Labels
           </span>
           <span>{currentImage && `${currentImage}`}</span>
         </div>

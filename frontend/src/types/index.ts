@@ -68,4 +68,4 @@ export interface DrawingRect {
 }
 
 /** Tool modes for the canvas */
-export type ToolMode = 'select' | 'draw';
+export type ToolMode = 'select' | 'draw' | 'pan';

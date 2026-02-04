@@ -2,6 +2,8 @@
 .DS_Store
 .github/
 data/
+projects/
+
 # Python
 __pycache__/
 *.py[cod]
