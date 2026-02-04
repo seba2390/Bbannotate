@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://pypi.org/project/bbannotate/"><img src="https://img.shields.io/pypi/v/bbannotate" alt="PyPI version"></a>
   <a href="https://pypi.org/project/bbannotate/"><img src="https://img.shields.io/pypi/pyversions/bbannotate" alt="Python versions"></a>
-  <a href="https://github.com/sebastianydemadsen/bbannotate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sebastianydemadsen/bbannotate" alt="License"></a>
+  <a href="https://github.com/seba2390/Bbannotate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/seba2390/Bbannotate" alt="License"></a>
 </p>
 
 A lightweight bounding box annotation tool for image datasets. Built with React/TypeScript frontend and FastAPI backend. Export to YOLO, COCO, Pascal VOC, and more.
