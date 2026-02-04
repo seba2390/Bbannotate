@@ -47,7 +47,10 @@ class TestProjectService:
 
     def test_list_projects_with_projects(self, service: ProjectService) -> None:
         """Test listing multiple projects."""
+        import time
+
         service.create_project(ProjectCreate(name="Project A"))
+        time.sleep(0.01)  # Ensure different timestamps on Windows
         service.create_project(ProjectCreate(name="Project B"))
 
         projects = service.list_projects()
