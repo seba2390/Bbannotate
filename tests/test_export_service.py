@@ -260,6 +260,71 @@ class TestYoloExport:
         content = yaml_path.read_text()
         assert "nc: 0" in content
 
+    def test_export_yolo_yaml_uses_relative_path(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test that YOLO data.yaml uses relative path, not absolute."""
+        create_test_dataset(annotation_service, sample_image_bytes)
+        output_dir = temp_data_dir / "yolo_export"
+        yaml_path = export_service.export_yolo(output_dir)
+
+        content = yaml_path.read_text()
+        # Should use relative path
+        assert "path: ." in content
+        # Should NOT contain absolute path
+        assert str(output_dir) not in content
+        assert "/tmp" not in content.lower()
+        assert "/var" not in content.lower()
+
+    def test_export_yolo_yaml_labels_populated(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test that YOLO data.yaml includes all labels when annotations exist."""
+        # Upload image and add annotations with specific labels
+        annotation_service.upload_image("test.png", sample_image_bytes)
+        for label in ["apple", "banana", "cherry"]:
+            bbox = BoundingBox(x=0.5, y=0.5, width=0.1, height=0.1)
+            annotation_service.add_annotation(
+                "test.png", AnnotationCreate(label=label, class_id=0, bbox=bbox)
+            )
+
+        output_dir = temp_data_dir / "yolo_export"
+        yaml_path = export_service.export_yolo(output_dir)
+        content = yaml_path.read_text()
+
+        # Labels should be sorted alphabetically
+        assert "nc: 3" in content
+        assert "0: apple" in content
+        assert "1: banana" in content
+        assert "2: cherry" in content
+
+    def test_export_yolo_yaml_no_labels_when_empty(
+        self,
+        export_service: ExportService,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test that YOLO data.yaml has nc=0 with no labels when dataset is empty."""
+        output_dir = temp_data_dir / "yolo_export"
+        yaml_path = export_service.export_yolo(output_dir)
+        content = yaml_path.read_text()
+
+        assert "nc: 0" in content
+        assert "names:" in content
+        # Should not have any label indices
+        lines = content.split("\n")
+        names_idx = next(i for i, line in enumerate(lines) if "names:" in line)
+        # Lines after "names:" should be empty or not contain class mappings
+        remaining = "\n".join(lines[names_idx + 1 :])
+        assert "0:" not in remaining
+
 
 class TestYoloZipExport:
     """Tests for YOLO ZIP export."""
@@ -292,6 +357,45 @@ class TestYoloZipExport:
             assert "data.yaml" in names
             assert any("train/images/" in name for name in names)
             assert any("train/labels/" in name for name in names)
+
+    def test_export_yolo_zip_yaml_relative_path(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+    ) -> None:
+        """Test that YOLO ZIP data.yaml uses relative path, not temp folder path."""
+        create_test_dataset(annotation_service, sample_image_bytes)
+        zip_path = export_service.export_yolo_zip()
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            yaml_content = zf.read("data.yaml").decode("utf-8")
+
+        # Should use relative path
+        assert "path: ." in yaml_content
+        # Should NOT contain temp folder path
+        assert "/tmp" not in yaml_content.lower()
+        assert "/var/folders" not in yaml_content.lower()
+        assert "yolo_dataset" not in yaml_content
+
+    def test_export_yolo_zip_yaml_contains_labels(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+    ) -> None:
+        """Test that YOLO ZIP data.yaml contains correct labels."""
+        create_test_dataset(annotation_service, sample_image_bytes)
+        zip_path = export_service.export_yolo_zip()
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            yaml_content = zf.read("data.yaml").decode("utf-8")
+
+        # Our test dataset uses brand, price, product labels
+        assert "nc: 3" in yaml_content
+        assert "brand" in yaml_content
+        assert "price" in yaml_content
+        assert "product" in yaml_content
 
     def test_export_yolo_zip_train_val_test_split(
         self,

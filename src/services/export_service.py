@@ -165,8 +165,9 @@ class ExportService:
         self, output_dir: Path, labels: list[str], include_test: bool = False
     ) -> str:
         """Create YOLO data.yaml content."""
+        # Use relative path since users extract the ZIP to their desired location
         lines = [
-            f"path: {output_dir.absolute()}",
+            "path: .",
             "train: train/images",
             "val: val/images",
         ]
