@@ -9,11 +9,7 @@ interface LabelManagerProps {
 /**
  * Modal component for managing custom annotation labels.
  */
-export function LabelManager({
-  labels,
-  onLabelsChange,
-  onClose,
-}: LabelManagerProps): JSX.Element {
+export function LabelManager({ labels, onLabelsChange, onClose }: LabelManagerProps): JSX.Element {
   const [editableLabels, setEditableLabels] = useState<string[]>([...labels]);
   const [newLabel, setNewLabel] = useState('');
   const [error, setError] = useState<string | null>(null);

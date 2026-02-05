@@ -28,10 +28,6 @@ def temp_data_dir(monkeypatch: pytest.MonkeyPatch) -> Path:
         # Use environment variables for path configuration
         monkeypatch.setenv("BBANNOTATE_DATA_DIR", str(data_dir))
         monkeypatch.setenv("BBANNOTATE_PROJECTS_DIR", str(projects_dir))
-        # Reset global project state
-        from src.api import routes
-
-        monkeypatch.setattr(routes, "_current_project_id", None)
         yield data_dir
 
 
@@ -51,6 +47,25 @@ def large_image() -> bytes:
     buffer = io.BytesIO()
     img.save(buffer, format="JPEG")
     return buffer.getvalue()
+
+
+class TestHealthEndpoint:
+    """Tests for the health check endpoint."""
+
+    def test_health_check(self, client: TestClient) -> None:
+        """Test that /api/health returns healthy status."""
+        response = client.get("/api/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["api"] == "ready"
+
+    def test_root_health_check(self, client: TestClient) -> None:
+        """Test that /health (root level) also returns healthy status."""
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
 
 
 class TestProjectEndpoints:
@@ -142,6 +157,38 @@ class TestImageEndpoints:
         response = client.get("/api/images/test.png")
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("image/")
+
+    def test_get_image_with_project_id_query_param(
+        self, client: TestClient, temp_data_dir: Path, sample_image: bytes
+    ) -> None:
+        """Test getting an image using project_id query parameter.
+
+        This tests the fix for browser <img> tags which cannot send custom headers.
+        The query parameter should work the same as the X-Project-Id header.
+        """
+        # Create a project first
+        create_response = client.post(
+            "/api/projects",
+            json={"name": "Test Project"},
+        )
+        project_id = create_response.json()["id"]
+
+        # Upload image to the project using header
+        client.post(
+            "/api/images",
+            files={"file": ("test.png", sample_image, "image/png")},
+            headers={"X-Project-Id": project_id},
+        )
+
+        # Get image using query parameter (simulating browser <img> behavior)
+        response = client.get(f"/api/images/test.png?project_id={project_id}")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("image/")
+
+        # Verify the image was fetched from the correct project directory
+        # (not from the legacy data directory)
+        response_content = response.content
+        assert len(response_content) > 0
 
     def test_delete_image(
         self, client: TestClient, temp_data_dir: Path, sample_image: bytes
@@ -256,16 +303,6 @@ class TestAnnotationEndpoints:
         # Verify deleted
         response = client.get("/api/images/test.png/annotations")
         assert len(response.json()) == 0
-
-
-class TestHealthEndpoint:
-    """Tests for health check endpoint."""
-
-    def test_health_check(self, client: TestClient) -> None:
-        """Test health check endpoint."""
-        response = client.get("/health")
-        assert response.status_code == 200
-        assert response.json() == {"status": "healthy"}
 
 
 class TestImageEndpointsErrorCases:

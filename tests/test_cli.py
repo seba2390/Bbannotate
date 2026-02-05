@@ -10,10 +10,10 @@ from typer.testing import CliRunner
 
 from src import __version__
 from src.cli import (
-    _find_frontend_dist,
     _find_frontend_src,
     app,
 )
+from src.utils import find_frontend_dist
 
 
 @pytest.fixture
@@ -332,26 +332,26 @@ class TestBuildFrontendCommand:
 
 
 class TestFindFrontendDist:
-    """Tests for _find_frontend_dist helper."""
+    """Tests for find_frontend_dist helper."""
 
     def test_find_frontend_dist_not_found(self, temp_dir: Path) -> None:
-        """Test _find_frontend_dist returns None when not found."""
+        """Test find_frontend_dist returns None when not found."""
         with patch.object(Path, "cwd", return_value=temp_dir):
             # Create empty directories (no index.html)
-            result = _find_frontend_dist()
+            result = find_frontend_dist()
             # Since we're testing in a real environment, it may find the real dist
             # Just verify it returns Path or None
             assert result is None or isinstance(result, Path)
 
     def test_find_frontend_dist_in_cwd(self, temp_dir: Path) -> None:
-        """Test _find_frontend_dist finds dist in cwd directory."""
+        """Test find_frontend_dist finds dist in cwd directory."""
         # Create the dist directory with index.html
         dist_dir = temp_dir / "frontend" / "dist"
         dist_dir.mkdir(parents=True)
         (dist_dir / "index.html").write_text("<html></html>")
 
         with patch.object(Path, "cwd", return_value=temp_dir):
-            result = _find_frontend_dist()
+            result = find_frontend_dist()
             # Should find the dist directory in cwd
             if result is not None:
                 assert result.exists()

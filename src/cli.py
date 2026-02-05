@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from src import __version__
+from src.utils import find_frontend_dist
 
 app = typer.Typer(
     name="bbannotate",
@@ -95,7 +96,7 @@ def start(
         os.environ["BBANNOTATE_PROJECTS_DIR"] = str(projects_dir.resolve())
 
     # Check if frontend is built
-    frontend_dist = _find_frontend_dist()
+    frontend_dist = find_frontend_dist()
     if frontend_dist is None:
         console.print(
             Panel(
@@ -123,8 +124,9 @@ def start(
         )
     )
 
-    # Open browser after server is ready (in background thread)
+    # Open browser after server is ready (in background thread with loading animation)
     if not no_browser:
+        server_ready = threading.Event()
 
         def open_browser_when_ready() -> None:
             """Wait for server to be ready, then open browser."""
@@ -136,15 +138,31 @@ def start(
             for _ in range(max_attempts):
                 try:
                     with urllib.request.urlopen(health_url, timeout=0.5):
+                        server_ready.set()
                         webbrowser.open(url)
                         return
                 except (urllib.error.URLError, TimeoutError, OSError):
                     time.sleep(0.1)
             # Fallback: open anyway after timeout
+            server_ready.set()
             webbrowser.open(url)
 
-        thread = threading.Thread(target=open_browser_when_ready, daemon=True)
-        thread.start()
+        def show_loading_spinner() -> None:
+            """Show a loading spinner until server is ready."""
+            from rich.live import Live
+            from rich.spinner import Spinner
+            from rich.text import Text
+
+            spinner = Spinner("dots", text=Text(" Waiting for server...", style="cyan"))
+            with Live(spinner, console=console, refresh_per_second=10, transient=True):
+                while not server_ready.wait(timeout=0.1):
+                    pass
+            console.print("[green]✓[/green] Server ready!")
+
+        browser_thread = threading.Thread(target=open_browser_when_ready, daemon=True)
+        spinner_thread = threading.Thread(target=show_loading_spinner, daemon=True)
+        browser_thread.start()
+        spinner_thread.start()
 
     # Start uvicorn (blocking)
     import uvicorn
@@ -218,7 +236,7 @@ def build_frontend() -> None:
 @app.command()
 def info() -> None:
     """Show information about the current installation."""
-    frontend_status = "Found" if _find_frontend_dist() else "Not built"
+    frontend_status = "Found" if find_frontend_dist() else "Not built"
     frontend_src = "Found" if _find_frontend_src() else "Not found"
     console.print(
         Panel(
@@ -230,33 +248,6 @@ def info() -> None:
             border_style="blue",
         )
     )
-
-
-def _find_frontend_dist() -> Path | None:
-    """Find the frontend dist directory.
-
-    Checks in order:
-    1. Bundled with package (src/frontend_dist) - for pip install
-    2. Relative to package (frontend/dist) - for development
-    3. Current working directory (frontend/dist) - for development
-    """
-    # Check bundled location (pip install includes frontend_dist in src/)
-    package_dir = Path(__file__).parent
-    bundled_path = package_dir / "frontend_dist"
-    if bundled_path.exists() and (bundled_path / "index.html").exists():
-        return bundled_path
-
-    # Check relative to package root (development mode with frontend/dist)
-    dev_path = package_dir.parent / "frontend" / "dist"
-    if dev_path.exists() and (dev_path / "index.html").exists():
-        return dev_path
-
-    # Check current working directory
-    cwd_dist = Path.cwd() / "frontend" / "dist"
-    if cwd_dist.exists() and (cwd_dist / "index.html").exists():
-        return cwd_dist
-
-    return None
 
 
 def _find_frontend_src() -> Path | None:

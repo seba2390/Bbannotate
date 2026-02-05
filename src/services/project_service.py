@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from src.utils import sanitize_name_for_path, validate_path_in_directory
+
 
 class Project(BaseModel):
     """Represents an annotation project."""
@@ -51,11 +53,7 @@ class ProjectService:
 
     def _generate_project_id(self, name: str) -> str:
         """Generate a unique project ID from name and timestamp."""
-        # Sanitize name for use in directory
-        sanitized = "".join(
-            c if c.isalnum() or c in "-_" else "_" for c in name.lower()
-        )
-        sanitized = sanitized[:50]  # Limit length
+        sanitized = sanitize_name_for_path(name)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"{sanitized}_{timestamp}"
 
@@ -184,10 +182,17 @@ class ProjectService:
 
         Returns:
             True if deleted, False if not found.
+
+        Raises:
+            ValueError: If project path is outside the base directory.
         """
         project_dir = self._get_project_dir(project_id)
         if not project_dir.exists():
             return False
+
+        # Security: Validate path stays within base_dir to prevent path traversal
+        if not validate_path_in_directory(project_dir, self.base_dir):
+            raise ValueError(f"Invalid project path: {project_id}")
 
         shutil.rmtree(project_dir)
         return True

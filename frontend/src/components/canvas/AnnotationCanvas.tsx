@@ -2,19 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Text } from 'react-konva';
 import type Konva from 'konva';
 import type { Annotation, BoundingBox, DrawingRect, ToolMode } from '@/types';
-
-/** Color palette for different labels */
-const LABEL_COLORS: Record<string, string> = {
-  product: '#22c55e',
-  price: '#3b82f6',
-  brand: '#f59e0b',
-  promo: '#ef4444',
-  default: '#8b5cf6',
-};
-
-function getLabelColor(label: string): string {
-  return LABEL_COLORS[label.toLowerCase()] ?? LABEL_COLORS['default'] ?? '#8b5cf6';
-}
+import { getLabelColor } from '@/lib/constants';
 
 /** Edge pan threshold in pixels (distance from edge to trigger auto-pan) */
 const EDGE_PAN_THRESHOLD = 50;
@@ -28,11 +16,15 @@ interface AnnotationCanvasProps {
   toolMode: ToolMode;
   currentLabel: string;
   currentClassId: number;
+  labels: string[];
+  isCurrentImageDone: boolean;
   onSelectAnnotation: (id: string | null) => void;
   onAddAnnotation: (rect: DrawingRect, imageWidth: number, imageHeight: number) => void;
   onUpdateBbox: (annotationId: string, bbox: BoundingBox) => void;
   onDeleteAnnotation: (annotationId: string) => void;
   onToolModeChange: (mode: ToolMode) => void;
+  onMarkDone: () => void;
+  onLabelChange: (label: string) => void;
 }
 
 /**
@@ -43,11 +35,16 @@ export function AnnotationCanvas({
   annotations,
   selectedId,
   toolMode,
+  currentLabel,
+  labels,
+  isCurrentImageDone,
   onSelectAnnotation,
   onAddAnnotation,
   onUpdateBbox,
   onDeleteAnnotation: _onDeleteAnnotation, // Used externally via keyboard shortcuts in App.tsx
   onToolModeChange,
+  onMarkDone,
+  onLabelChange,
 }: AnnotationCanvasProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -179,6 +176,14 @@ export function AnnotationCanvas({
     }
   }, [selectedId, toolMode, annotations]);
 
+  // Stop auto-pan animation
+  const stopAutoPan = useCallback((): void => {
+    if (autoPanRef.current !== null) {
+      cancelAnimationFrame(autoPanRef.current);
+      autoPanRef.current = null;
+    }
+  }, []);
+
   // Handle Escape to cancel drawing (other keys handled in App.tsx)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
@@ -191,15 +196,7 @@ export function AnnotationCanvas({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDrawing]);
-
-  // Stop auto-pan animation
-  const stopAutoPan = useCallback((): void => {
-    if (autoPanRef.current !== null) {
-      cancelAnimationFrame(autoPanRef.current);
-      autoPanRef.current = null;
-    }
-  }, []);
+  }, [isDrawing, stopAutoPan]);
 
   // Cleanup auto-pan on unmount
   useEffect(() => {
@@ -617,6 +614,27 @@ export function AnnotationCanvas({
             />
           </svg>
         </button>
+
+        {/* Separator */}
+        {labels.length > 0 && (
+          <>
+            <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+
+            {/* Label selector */}
+            <select
+              value={currentLabel}
+              onChange={(e) => onLabelChange(e.target.value)}
+              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              title="Select label (1-9)"
+            >
+              {labels.map((label, idx) => (
+                <option key={label} value={label}>
+                  {idx + 1}. {label}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
 
       <Stage
@@ -696,6 +714,35 @@ export function AnnotationCanvas({
           />
         </Layer>
       </Stage>
+
+      {/* Done button overlay - upper right corner */}
+      {imageUrl && (
+        <button
+          onClick={onMarkDone}
+          className={`absolute right-4 top-4 rounded-lg px-4 py-2 text-sm font-medium shadow-lg transition-colors ${
+            isCurrentImageDone
+              ? 'border border-green-500 bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/50 dark:text-green-400 dark:hover:bg-green-900/70'
+              : 'bg-green-600 text-white hover:bg-green-700'
+          }`}
+          title={isCurrentImageDone ? 'Image marked as done (click to undo)' : 'Mark image as done'}
+        >
+          {isCurrentImageDone ? (
+            <span className="flex items-center gap-1">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              Done
+            </span>
+          ) : (
+            'Mark Done'
+          )}
+        </button>
+      )}
     </div>
   );
 }

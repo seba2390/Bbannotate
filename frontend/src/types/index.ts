@@ -42,6 +42,7 @@ export interface ProjectInfo {
   image_count: number;
   annotation_count: number;
   annotated_image_count: number;
+  done_image_count: number;
 }
 
 /** Project (for project manager) */

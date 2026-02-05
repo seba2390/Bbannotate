@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-02-05
+
+### Fixed
+
+- Fixed broken image display in main view and thumbnails (browser <img> tags now use project_id query parameter)
+
+### Changed
+
+- Restructured toolbar layout: Export button on right, navigation buttons centered
+- Moved Done button to upper right corner of image view for better visibility
+- Integrated label dropdown into canvas toolbar alongside zoom controls
+- Moved labels configurer to right panel
+- Moved Clear button to annotations section in right panel
+- Removed default labels; users are now prompted to create their first label when drawing
+
 ## [1.0.3] - 2026-02-05
 
 ### Fixed

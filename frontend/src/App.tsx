@@ -8,13 +8,22 @@ import {
   ProjectManager,
   LabelManager,
   ExportDialog,
+  ToastContainer,
+  useToast,
+  ConfirmDialog,
 } from '@/components';
 import { useAnnotations, useImages } from '@/hooks';
-import { getImageUrl, getProjectInfo, closeProject } from '@/lib/api';
+import {
+  getImageUrl,
+  getProjectInfo,
+  closeProject,
+  markImageDone,
+  getAllDoneStatus,
+} from '@/lib/api';
 import type { ToolMode, DrawingRect, BoundingBox, Project } from '@/types';
 
-/** Default labels for grocery flyer annotation */
-const DEFAULT_LABELS = ['product', 'price', 'brand', 'promo'];
+/** Default labels - empty so users define their own */
+const DEFAULT_LABELS: string[] = [];
 
 /** Load labels from localStorage or use defaults */
 function loadLabels(): string[] {
@@ -23,7 +32,11 @@ function loadLabels(): string[] {
   if (stored) {
     try {
       const parsed = JSON.parse(stored) as unknown;
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((l) => typeof l === 'string')) {
+      if (
+        Array.isArray(parsed) &&
+        parsed.length > 0 &&
+        parsed.every((l) => typeof l === 'string')
+      ) {
         return parsed as string[];
       }
     } catch {
@@ -60,13 +73,23 @@ function App(): JSX.Element {
     }
     return false;
   });
-  const [annotatedCount, setAnnotatedCount] = useState(0);
+  const [doneCount, setDoneCount] = useState(0);
+  const [doneStatus, setDoneStatus] = useState<Record<string, boolean>>({});
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    destructive?: boolean;
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+  const { toasts, addToast, removeToast } = useToast();
 
   const {
     images,
     currentImage,
     currentIndex,
     loading: imagesLoading,
+    error: imagesError,
     uploadImages,
     selectImage,
     nextImage,
@@ -79,6 +102,7 @@ function App(): JSX.Element {
     annotations,
     selectedId,
     loading: annotationsLoading,
+    error: annotationsError,
     loadAnnotations,
     addAnnotation,
     updateAnnotation,
@@ -102,6 +126,20 @@ function App(): JSX.Element {
   const handleCloseProject = useCallback(async (): Promise<void> => {
     await closeProject();
     setCurrentProject(null);
+    setDoneStatus({});
+    setDoneCount(0);
+  }, []);
+
+  // Helper to show confirm dialog
+  const showConfirm = useCallback(
+    (title: string, message: string, onConfirm: () => void, destructive = false) => {
+      setConfirmDialog({ isOpen: true, title, message, onConfirm, destructive });
+    },
+    []
+  );
+
+  const closeConfirm = useCallback(() => {
+    setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
   }, []);
 
   // Load annotations when image changes
@@ -122,18 +160,34 @@ function App(): JSX.Element {
     }
   }, [darkMode]);
 
-  // Load project info for progress tracking
+  // Show errors from hooks as toasts
+  useEffect(() => {
+    if (imagesError) {
+      addToast(imagesError, 'error');
+    }
+  }, [imagesError, addToast]);
+
+  useEffect(() => {
+    if (annotationsError) {
+      addToast(annotationsError, 'error');
+    }
+  }, [annotationsError, addToast]);
+
+  // Load project info and done status for progress tracking
   useEffect(() => {
     const loadProgress = async (): Promise<void> => {
       try {
-        const info = await getProjectInfo();
-        setAnnotatedCount(info.annotated_image_count);
+        const [info, status] = await Promise.all([getProjectInfo(), getAllDoneStatus()]);
+        setDoneCount(info.done_image_count);
+        setDoneStatus(status);
       } catch {
         // Ignore errors
       }
     };
-    loadProgress();
-  }, [images, annotations]);
+    if (currentProject) {
+      loadProgress();
+    }
+  }, [currentProject, images]);
 
   // Handle delete annotation (exposed for keyboard shortcut)
   const handleDeleteSelected = useCallback((): void => {
@@ -151,7 +205,11 @@ function App(): JSX.Element {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
       // Ignore if typing in input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLSelectElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
         return;
       }
 
@@ -206,6 +264,12 @@ function App(): JSX.Element {
   const handleAddAnnotation = useCallback(
     (rect: DrawingRect, imageWidth: number, imageHeight: number) => {
       if (!currentImage) return;
+      // If no labels defined, prompt user to create one first
+      if (labels.length === 0) {
+        setShowLabelManager(true);
+        addToast('Please create a label first before annotating', 'info');
+        return;
+      }
       const classId = labels.indexOf(currentLabel);
       addAnnotation(
         currentImage,
@@ -216,7 +280,7 @@ function App(): JSX.Element {
         imageHeight
       );
     },
-    [currentImage, currentLabel, labels, addAnnotation]
+    [currentImage, currentLabel, labels, addAnnotation, addToast]
   );
 
   const handleUpdateBbox = useCallback(
@@ -240,32 +304,100 @@ function App(): JSX.Element {
 
   const handleClearAnnotations = useCallback(() => {
     if (!currentImage) return;
-    if (confirm('Clear all annotations for this image?')) {
-      clearAnnotations(currentImage);
-    }
-  }, [currentImage, clearAnnotations]);
+    showConfirm(
+      'Clear Annotations',
+      'Clear all annotations for this image?',
+      () => {
+        clearAnnotations(currentImage);
+        closeConfirm();
+      },
+      true
+    );
+  }, [currentImage, clearAnnotations, showConfirm, closeConfirm]);
 
   const handleExport = useCallback((): void => {
     setShowExportDialog(true);
   }, []);
 
-  // Handle label updates from LabelManager
-  const handleLabelsChange = useCallback((newLabels: string[]): void => {
-    setLabels(newLabels);
-    saveLabels(newLabels);
-    // If current label was removed, switch to first label
-    if (!newLabels.includes(currentLabel) && newLabels.length > 0) {
-      setCurrentLabel(newLabels[0] ?? 'product');
+  // Handle marking image as done
+  const handleMarkDone = useCallback(async (): Promise<void> => {
+    if (!currentImage) return;
+
+    const isCurrentlyDone = doneStatus[currentImage] ?? false;
+
+    // If already done, allow toggling it off
+    if (isCurrentlyDone) {
+      try {
+        await markImageDone(currentImage, false);
+        setDoneStatus((prev) => ({ ...prev, [currentImage]: false }));
+        setDoneCount((prev) => Math.max(0, prev - 1));
+      } catch {
+        addToast('Failed to update image status', 'error');
+      }
+      return;
     }
-  }, [currentLabel]);
+
+    // If no annotations, ask if user wants to remove the image
+    if (annotations.length === 0) {
+      showConfirm(
+        'No Annotations',
+        'This image has no annotations.\n\nDo you want to remove it from the project?',
+        () => {
+          deleteImage(currentImage);
+          closeConfirm();
+        },
+        true
+      );
+      return;
+    }
+
+    // Mark as done, update progress, and go to next image
+    try {
+      await markImageDone(currentImage, true);
+      setDoneStatus((prev) => ({ ...prev, [currentImage]: true }));
+      setDoneCount((prev) => prev + 1);
+      // Go to next image
+      nextImage();
+    } catch {
+      addToast('Failed to mark image as done', 'error');
+    }
+  }, [
+    currentImage,
+    annotations,
+    doneStatus,
+    deleteImage,
+    nextImage,
+    showConfirm,
+    closeConfirm,
+    addToast,
+  ]);
+
+  // Handle label updates from LabelManager
+  const handleLabelsChange = useCallback(
+    (newLabels: string[]): void => {
+      setLabels(newLabels);
+      saveLabels(newLabels);
+      // If current label was removed, switch to first label
+      if (!newLabels.includes(currentLabel) && newLabels.length > 0) {
+        setCurrentLabel(newLabels[0] ?? 'product');
+      }
+    },
+    [currentLabel]
+  );
 
   const handleDeleteImage = useCallback(
     (filename: string) => {
-      if (confirm(`Delete "${filename}" and all its annotations?`)) {
-        deleteImage(filename);
-      }
+      showConfirm(
+        'Delete Image',
+        `Delete "${filename}" and all its annotations?`,
+        () => {
+          deleteImage(filename);
+          closeConfirm();
+        },
+        true
+      );
     },
-    [deleteImage]
+    [deleteImage, showConfirm, closeConfirm]
   );
 
   const loading = imagesLoading || annotationsLoading;
@@ -279,7 +411,8 @@ function App(): JSX.Element {
     <div className="flex h-screen flex-col bg-white dark:bg-gray-900">
       {/* Header */}
       <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex items-center gap-3">
+        {/* Left section: Back button & project name */}
+        <div className="flex flex-1 items-center gap-3">
           <button
             onClick={handleCloseProject}
             className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
@@ -300,19 +433,28 @@ function App(): JSX.Element {
             </h1>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+
+        {/* Center section: Stylized app name */}
+        <div className="flex flex-1 items-center justify-center">
+          <h2 className="bg-gradient-to-r from-primary-500 via-purple-500 to-pink-500 bg-clip-text text-xl font-extrabold tracking-tight text-transparent">
+            Bbannotate
+          </h2>
+        </div>
+
+        {/* Right section: Progress indicator & dark mode */}
+        <div className="flex flex-1 items-center justify-end gap-4">
           {/* Progress indicator */}
           <div className="flex items-center gap-2">
             <div className="h-2 w-32 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
               <div
                 className="h-full rounded-full bg-green-500 transition-all duration-300"
                 style={{
-                  width: images.length > 0 ? `${(annotatedCount / images.length) * 100}%` : '0%',
+                  width: images.length > 0 ? `${(doneCount / images.length) * 100}%` : '0%',
                 }}
               />
             </div>
             <span className="text-sm text-gray-600 dark:text-gray-300">
-              {annotatedCount}/{images.length}
+              {doneCount}/{images.length}
             </span>
           </div>
           {/* Dark mode toggle */}
@@ -341,15 +483,10 @@ function App(): JSX.Element {
       {/* Toolbar */}
       <Toolbar
         toolMode={toolMode}
-        currentLabel={currentLabel}
-        labels={labels}
         onToolModeChange={setToolMode}
-        onLabelChange={setCurrentLabel}
         onPrevImage={prevImage}
         onNextImage={nextImage}
-        onClearAnnotations={handleClearAnnotations}
         onExport={handleExport}
-        onManageLabels={() => setShowLabelManager(true)}
         imageIndex={currentIndex}
         imageCount={images.length}
       />
@@ -378,6 +515,7 @@ function App(): JSX.Element {
             <ImageList
               images={images}
               currentImage={currentImage}
+              doneStatus={doneStatus}
               onSelectImage={selectImage}
               onDeleteImage={handleDeleteImage}
             />
@@ -393,20 +531,79 @@ function App(): JSX.Element {
             toolMode={toolMode}
             currentLabel={currentLabel}
             currentClassId={labels.indexOf(currentLabel)}
+            labels={labels}
+            isCurrentImageDone={currentImage ? (doneStatus[currentImage] ?? false) : false}
             onSelectAnnotation={selectAnnotation}
             onAddAnnotation={handleAddAnnotation}
             onUpdateBbox={handleUpdateBbox}
             onDeleteAnnotation={handleDeleteAnnotation}
             onToolModeChange={setToolMode}
+            onMarkDone={handleMarkDone}
+            onLabelChange={setCurrentLabel}
           />
         </main>
 
         {/* Right sidebar - Annotations */}
         <aside className="flex w-64 flex-col border-l border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          {/* Labels section */}
           <div className="border-b border-gray-200 p-3 dark:border-gray-700">
-            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Annotations ({annotations.length})
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Labels ({labels.length})
+              </h2>
+              <button
+                onClick={() => setShowLabelManager(true)}
+                className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                title="Manage labels"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </button>
+            </div>
+            {labels.length === 0 ? (
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                No labels defined. Click the gear icon to add labels.
+              </p>
+            ) : (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {labels.map((label, idx) => (
+                  <span
+                    key={label}
+                    className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                  >
+                    {idx + 1}. {label}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Annotations section */}
+          <div className="border-b border-gray-200 p-3 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Annotations ({annotations.length})
+              </h2>
+              <button
+                onClick={handleClearAnnotations}
+                disabled={annotations.length === 0}
+                className="rounded px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-red-500 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-red-400"
+                title="Clear all annotations"
+              >
+                Clear
+              </button>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto">
             <AnnotationList
@@ -436,6 +633,20 @@ function App(): JSX.Element {
           <span>{currentImage && `${currentImage}`}</span>
         </div>
       </footer>
+
+      {/* Toast notifications */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      {/* Confirm dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={closeConfirm}
+        destructive={confirmDialog.destructive}
+        confirmText={confirmDialog.destructive ? 'Delete' : 'Confirm'}
+      />
     </div>
   );
 }

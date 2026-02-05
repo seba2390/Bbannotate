@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Project } from '@/types';
 import { listProjects, createProject, deleteProject, openProject } from '@/lib/api';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface ProjectManagerProps {
   onOpenProject: (project: Project) => void;
@@ -15,6 +16,7 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
   const [creating, setCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
   const loadProjects = useCallback(async (): Promise<void> => {
     try {
@@ -60,15 +62,19 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
   };
 
   const handleDeleteProject = async (project: Project): Promise<void> => {
-    if (!confirm(`Delete "${project.name}" and all its data? This cannot be undone.`)) {
-      return;
-    }
+    setProjectToDelete(project);
+  };
+
+  const confirmDeleteProject = async (): Promise<void> => {
+    if (!projectToDelete) return;
 
     try {
-      await deleteProject(project.id);
+      await deleteProject(projectToDelete.id);
       await loadProjects();
     } catch {
       setError('Failed to delete project');
+    } finally {
+      setProjectToDelete(null);
     }
   };
 
@@ -86,22 +92,11 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-8 dark:bg-gray-900">
       <div className="w-full max-w-2xl">
-        {/* Logo */}
+        {/* Stylized App Name */}
         <div className="-mt-4 mb-4 flex justify-center">
-          <div
-            className="relative h-48 w-96"
-            style={{
-              maskImage: 'radial-gradient(ellipse 80% 80% at center, black 40%, transparent 100%)',
-              WebkitMaskImage:
-                'radial-gradient(ellipse 80% 80% at center, black 40%, transparent 100%)',
-            }}
-          >
-            <img
-              src="/logo.png"
-              alt="Bbannotate Logo"
-              className="h-full w-full object-contain"
-            />
-          </div>
+          <h1 className="bg-gradient-to-r from-primary-500 via-purple-500 to-pink-500 bg-clip-text text-6xl font-extrabold tracking-tight text-transparent">
+            Bbannotate
+          </h1>
         </div>
 
         {/* Subtitle */}
@@ -218,6 +213,18 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
           )}
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        isOpen={projectToDelete !== null}
+        title="Delete Project"
+        message={`Delete "${projectToDelete?.name}" and all its data? This cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={confirmDeleteProject}
+        onCancel={() => setProjectToDelete(null)}
+        destructive
+      />
     </div>
   );
 }

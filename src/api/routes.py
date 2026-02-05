@@ -4,8 +4,19 @@ import os
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.models.annotations import (
     Annotation,
@@ -17,8 +28,14 @@ from src.models.annotations import (
 from src.services.annotation_service import AnnotationService
 from src.services.export_service import ExportService
 from src.services.project_service import Project, ProjectCreate, ProjectService
+from src.utils import validate_path_in_directory
 
 router = APIRouter()
+
+# Rate limiter for upload protection
+# Default: 30 uploads per minute per IP (configurable via env)
+_upload_rate_limit = os.environ.get("BBANNOTATE_UPLOAD_RATE_LIMIT", "30/minute")
+limiter = Limiter(key_func=get_remote_address)
 
 
 def get_projects_dir() -> Path:
@@ -41,22 +58,48 @@ def get_data_dir() -> Path:
 PROJECTS_DIR = get_projects_dir()
 DATA_DIR = get_data_dir()  # Legacy fallback
 
-# Global state for current project
-_current_project_id: str | None = None
-
 
 def get_project_service() -> ProjectService:
     """Dependency for project service."""
     return ProjectService(get_projects_dir())
 
 
-def get_annotation_service() -> AnnotationService:
-    """Dependency for annotation service - uses current project's data directory."""
-    global _current_project_id
-    if _current_project_id:
-        project_service = ProjectService(get_projects_dir())
-        data_dir = project_service.get_project_data_dir(_current_project_id)
+def get_project_id_from_header(
+    x_project_id: Annotated[str | None, Header()] = None,
+) -> str | None:
+    """Extract project ID from X-Project-Id header.
+
+    This replaces the previous global state approach, making the API
+    thread-safe and suitable for multi-user deployments.
+    """
+    return x_project_id
+
+
+def get_annotation_service(
+    project_id: Annotated[str | None, Depends(get_project_id_from_header)],
+) -> AnnotationService:
+    """Dependency for annotation service - uses project from request header.
+
+    Args:
+        project_id: Project ID from X-Project-Id header.
+
+    Returns:
+        AnnotationService configured for the specified project.
+
+    Raises:
+        HTTPException: If project ID is invalid or path traversal is detected.
+    """
+    if project_id:
+        projects_dir = get_projects_dir()
+        project_service = ProjectService(projects_dir)
+        data_dir = project_service.get_project_data_dir(project_id)
         if data_dir:
+            # Security: Validate path stays within projects directory
+            if not validate_path_in_directory(data_dir, projects_dir):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid project ID",
+                )
             return AnnotationService(data_dir)
     # Fallback to legacy data directory
     return AnnotationService(get_data_dir())
@@ -67,6 +110,13 @@ def get_export_service(
 ) -> ExportService:
     """Dependency for export service."""
     return ExportService(annotation_service)
+
+
+# Health check endpoint
+@router.get("/health")
+def health_check() -> dict[str, str]:
+    """Health check endpoint for API availability."""
+    return {"status": "healthy", "api": "ready"}
 
 
 # Project management endpoints
@@ -90,12 +140,12 @@ def create_project(
 @router.get("/projects/current", response_model=Project | None)
 def get_current_project(
     service: Annotated[ProjectService, Depends(get_project_service)],
+    project_id: Annotated[str | None, Depends(get_project_id_from_header)],
 ) -> Project | None:
-    """Get the currently active project."""
-    global _current_project_id
-    if not _current_project_id:
+    """Get the currently active project from X-Project-Id header."""
+    if not project_id:
         return None
-    return service.get_project(_current_project_id)
+    return service.get_project(project_id)
 
 
 @router.post("/projects/{project_id}/open", response_model=Project)
@@ -103,20 +153,24 @@ def open_project(
     project_id: str,
     service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
-    """Open a project (set as current and update last_opened)."""
-    global _current_project_id
+    """Open a project and update last_opened timestamp.
+
+    The client should store the returned project ID and include it
+    in subsequent requests via the X-Project-Id header.
+    """
     project = service.open_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    _current_project_id = project_id
     return project
 
 
 @router.post("/projects/close")
 def close_project() -> dict[str, bool]:
-    """Close the current project."""
-    global _current_project_id
-    _current_project_id = None
+    """Close the current project.
+
+    This is now a no-op on the server side since project context
+    is managed per-request via headers. Kept for API compatibility.
+    """
     return {"success": True}
 
 
@@ -126,12 +180,9 @@ def delete_project(
     service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> dict[str, bool]:
     """Delete a project and all its data."""
-    global _current_project_id
     success = service.delete_project(project_id)
     if not success:
         raise HTTPException(status_code=404, detail="Project not found")
-    if _current_project_id == project_id:
-        _current_project_id = None
     return {"success": True}
 
 
@@ -154,11 +205,16 @@ def list_images(
 
 
 @router.post("/images", response_model=ImageInfo)
+@limiter.limit(_upload_rate_limit)
 async def upload_image(
+    request: Request,
     file: Annotated[UploadFile, File(...)],
     service: Annotated[AnnotationService, Depends(get_annotation_service)],
 ) -> ImageInfo:
-    """Upload a new image."""
+    """Upload a new image.
+
+    Rate limited to prevent abuse (default: 30/minute per IP).
+    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
@@ -172,9 +228,36 @@ async def upload_image(
 @router.get("/images/{filename}")
 def get_image(
     filename: str,
-    service: Annotated[AnnotationService, Depends(get_annotation_service)],
+    project_id: Annotated[
+        str | None, Query(description="Project ID for image lookup")
+    ] = None,
+    header_project_id: Annotated[
+        str | None, Depends(get_project_id_from_header)
+    ] = None,
 ) -> FileResponse:
-    """Get an image file."""
+    """Get an image file.
+
+    Accepts project_id as query parameter (for browser <img> tags that cannot
+    send custom headers) or via X-Project-Id header (for axios requests).
+    Query parameter takes precedence if both are provided.
+    """
+    # Use query param if provided, otherwise fall back to header
+    effective_project_id = project_id or header_project_id
+
+    # Create annotation service with the resolved project ID
+    if effective_project_id:
+        projects_dir = get_projects_dir()
+        project_service = ProjectService(projects_dir)
+        data_dir = project_service.get_project_data_dir(effective_project_id)
+        if data_dir:
+            if not validate_path_in_directory(data_dir, projects_dir):
+                raise HTTPException(status_code=400, detail="Invalid project ID")
+            service = AnnotationService(data_dir)
+        else:
+            service = AnnotationService(get_data_dir())
+    else:
+        service = AnnotationService(get_data_dir())
+
     path = service.get_image_path(filename)
     if path is None:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -191,6 +274,39 @@ def delete_image(
     if not success:
         raise HTTPException(status_code=404, detail="Image not found")
     return {"success": True}
+
+
+@router.patch("/images/{filename}/done")
+def mark_image_done(
+    filename: str,
+    service: Annotated[AnnotationService, Depends(get_annotation_service)],
+    done: Annotated[bool, Query(description="Mark image as done")] = True,
+) -> dict[str, bool]:
+    """Mark an image as done (annotation complete)."""
+    success = service.mark_image_done(filename, done)
+    if not success:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return {"success": True, "done": done}
+
+
+@router.get("/images/{filename}/done")
+def get_image_done_status(
+    filename: str,
+    service: Annotated[AnnotationService, Depends(get_annotation_service)],
+) -> dict[str, bool]:
+    """Get the done status of an image."""
+    done = service.get_image_done_status(filename)
+    if done is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return {"done": done}
+
+
+@router.get("/images/done-status", response_model=dict[str, bool])
+def get_all_done_status(
+    service: Annotated[AnnotationService, Depends(get_annotation_service)],
+) -> dict[str, bool]:
+    """Get done status for all images."""
+    return service.get_all_done_status()
 
 
 # Annotation endpoints
@@ -273,6 +389,13 @@ def export_yolo(
     test_split: Annotated[float, Query(ge=0.0, le=0.5)] = 0.1,
 ) -> FileResponse:
     """Export annotations in YOLO format as a ZIP file."""
+    # Validate splits sum to at most 1.0
+    total_split = train_split + val_split + test_split
+    if total_split > 1.0:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Split values must sum to at most 1.0 (got {total_split:.2f})",
+        )
     zip_path = export_service.export_yolo_zip(train_split, val_split, test_split)
     return FileResponse(
         zip_path,

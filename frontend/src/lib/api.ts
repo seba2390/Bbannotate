@@ -13,6 +13,23 @@ const api = axios.create({
   baseURL: '/api',
 });
 
+// Track current project ID for image URL generation
+// (needed because <img> tags cannot include custom headers)
+let currentProjectId: string | null = null;
+
+/**
+ * Set the current project ID for all subsequent API requests.
+ * This is used for thread-safe, per-request project context.
+ */
+export function setCurrentProjectId(projectId: string | null): void {
+  currentProjectId = projectId;
+  if (projectId) {
+    api.defaults.headers.common['X-Project-Id'] = projectId;
+  } else {
+    delete api.defaults.headers.common['X-Project-Id'];
+  }
+}
+
 /** Project Management API */
 export async function listProjects(): Promise<Project[]> {
   const response = await api.get<Project[]>('/projects');
@@ -31,10 +48,14 @@ export async function getCurrentProject(): Promise<Project | null> {
 
 export async function openProject(projectId: string): Promise<Project> {
   const response = await api.post<Project>(`/projects/${encodeURIComponent(projectId)}/open`);
+  // Set header for all subsequent requests
+  setCurrentProjectId(projectId);
   return response.data;
 }
 
 export async function closeProject(): Promise<void> {
+  // Clear header before closing
+  setCurrentProjectId(null);
   await api.post('/projects/close');
 }
 
@@ -64,20 +85,34 @@ export async function uploadImage(file: File): Promise<ImageInfo> {
 }
 
 export async function uploadImages(files: File[]): Promise<ImageInfo[]> {
-  const results: ImageInfo[] = [];
-  for (const file of files) {
-    const info = await uploadImage(file);
-    results.push(info);
-  }
-  return results;
+  const uploads = files.map((file) => uploadImage(file));
+  return Promise.all(uploads);
 }
 
 export function getImageUrl(filename: string): string {
-  return `/api/images/${encodeURIComponent(filename)}`;
+  const baseUrl = `/api/images/${encodeURIComponent(filename)}`;
+  if (currentProjectId) {
+    return `${baseUrl}?project_id=${encodeURIComponent(currentProjectId)}`;
+  }
+  return baseUrl;
 }
 
 export async function deleteImage(filename: string): Promise<void> {
   await api.delete(`/images/${encodeURIComponent(filename)}`);
+}
+
+export async function markImageDone(filename: string, done: boolean = true): Promise<void> {
+  await api.patch(`/images/${encodeURIComponent(filename)}/done?done=${done}`);
+}
+
+export async function getImageDoneStatus(filename: string): Promise<boolean> {
+  const response = await api.get<{ done: boolean }>(`/images/${encodeURIComponent(filename)}/done`);
+  return response.data.done;
+}
+
+export async function getAllDoneStatus(): Promise<Record<string, boolean>> {
+  const response = await api.get<Record<string, boolean>>('/images/done-status');
+  return response.data;
 }
 
 /** Annotation API */
@@ -199,9 +234,7 @@ export function getExportUrl(
   }
 }
 
-export function getYoloExportUrl(
-  split: DataSplit = { train: 0.7, val: 0.2, test: 0.1 }
-): string {
+export function getYoloExportUrl(split: DataSplit = { train: 0.7, val: 0.2, test: 0.1 }): string {
   return `/api/export/yolo?train_split=${split.train}&val_split=${split.val}&test_split=${split.test}`;
 }
 

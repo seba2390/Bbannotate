@@ -1,10 +1,13 @@
 """Service for exporting annotations to various formats."""
 
+import logging
 import shutil
 import zipfile
 from pathlib import Path
 
 from src.services.annotation_service import AnnotationService
+
+logger = logging.getLogger(__name__)
 
 
 class ExportService:
@@ -22,9 +25,13 @@ class ExportService:
         """Get sorted list of all unique labels in the project."""
         labels: set[str] = set()
         for filename in self.annotation_service.list_images():
-            annotations = self.annotation_service.get_annotations(filename)
-            for ann in annotations:
-                labels.add(ann.label)
+            try:
+                annotations = self.annotation_service.get_annotations(filename)
+                for ann in annotations:
+                    labels.add(ann.label)
+            except Exception:
+                logger.warning("Skipping corrupt annotation file for %s", filename)
+                continue
         return sorted(labels)
 
     def export_yolo(
@@ -234,7 +241,7 @@ class ExportService:
 
         for img_id, filename in enumerate(self.annotation_service.list_images()):
             annotations = self.annotation_service.get_annotations(filename)
-            metadata = self.annotation_service._load_metadata(filename)
+            metadata = self.annotation_service.load_metadata(filename)
 
             if metadata is None:
                 continue
@@ -300,7 +307,7 @@ class ExportService:
 
         for filename in self.annotation_service.list_images():
             annotations = self.annotation_service.get_annotations(filename)
-            metadata = self.annotation_service._load_metadata(filename)
+            metadata = self.annotation_service.load_metadata(filename)
             source_path = self.annotation_service.get_image_path(filename)
 
             if metadata is None or source_path is None:
@@ -388,7 +395,7 @@ class ExportService:
 
         for filename in self.annotation_service.list_images():
             annotations = self.annotation_service.get_annotations(filename)
-            metadata = self.annotation_service._load_metadata(filename)
+            metadata = self.annotation_service.load_metadata(filename)
 
             if metadata is None:
                 continue
@@ -453,7 +460,7 @@ class ExportService:
 
             for filename in self.annotation_service.list_images():
                 annotations = self.annotation_service.get_annotations(filename)
-                metadata = self.annotation_service._load_metadata(filename)
+                metadata = self.annotation_service.load_metadata(filename)
 
                 if metadata is None:
                     continue

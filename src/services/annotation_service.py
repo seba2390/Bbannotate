@@ -1,6 +1,7 @@
 """Service for managing annotations and images."""
 
 import json
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -15,6 +16,11 @@ from src.models.annotations import (
     ImageMetadata,
     ProjectInfo,
 )
+from src.utils import sanitize_filename, validate_path_in_directory
+
+# Maximum image file size in bytes (default: 50MB, configurable via env)
+_max_size_mb = int(os.environ.get("BBANNOTATE_MAX_IMAGE_SIZE_MB", "50"))
+MAX_IMAGE_SIZE_BYTES = _max_size_mb * 1024 * 1024
 
 
 class AnnotationService:
@@ -42,7 +48,7 @@ class AnnotationService:
         stem = Path(image_filename).stem
         return self.annotations_dir / f"{stem}.json"
 
-    def _load_metadata(self, image_filename: str) -> ImageMetadata | None:
+    def load_metadata(self, image_filename: str) -> ImageMetadata | None:
         """Load metadata for an image from JSON file."""
         annotation_path = self._get_annotation_path(image_filename)
         if not annotation_path.exists():
@@ -63,6 +69,7 @@ class AnnotationService:
         total_annotations = 0
         image_count = 0
         annotated_image_count = 0
+        done_image_count = 0
 
         for annotation_file in self.annotations_dir.glob("*.json"):
             with annotation_file.open("r") as f:
@@ -73,6 +80,8 @@ class AnnotationService:
             total_annotations += annotation_count
             if annotation_count > 0:
                 annotated_image_count += 1
+            if metadata.done:
+                done_image_count += 1
             for ann in metadata.annotations:
                 labels.add(ann.label)
 
@@ -81,6 +90,7 @@ class AnnotationService:
             image_count=image_count,
             annotation_count=total_annotations,
             annotated_image_count=annotated_image_count,
+            done_image_count=done_image_count,
         )
 
     def list_images(self) -> list[str]:
@@ -103,21 +113,28 @@ class AnnotationService:
             ImageInfo with dimensions.
 
         Raises:
-            ValueError: If the file is not a valid image.
+            ValueError: If the file is not a valid image or exceeds size limit.
         """
+        # Check file size before processing
+        content_size = len(content)
+        if content_size > MAX_IMAGE_SIZE_BYTES:
+            max_mb = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
+            actual_mb = content_size / (1024 * 1024)
+            msg = f"Image too large: {actual_mb:.1f}MB exceeds {max_mb:.0f}MB limit"
+            raise ValueError(msg)
+
         # Validate and get image dimensions
         from io import BytesIO
 
         try:
             img = Image.open(BytesIO(content))
-            img.verify()  # Verify it's a valid image
-            img = Image.open(BytesIO(content))  # Re-open after verify
             width, height = img.size
+            img.verify()  # Verify it's a valid image (must be after size read)
         except Exception as err:
             raise ValueError(f"Invalid image file: {err}") from err
 
         # Save image
-        safe_filename = Path(filename).name  # Prevent path traversal
+        safe_filename = sanitize_filename(filename)
         image_path = self.images_dir / safe_filename
 
         # Handle duplicate filenames
@@ -140,16 +157,44 @@ class AnnotationService:
         return image_info
 
     def get_image_path(self, filename: str) -> Path | None:
-        """Get the full path to an image file."""
-        path = self.images_dir / filename
+        """Get the full path to an image file.
+
+        Args:
+            filename: The image filename.
+
+        Returns:
+            The path to the image if it exists and is valid, None otherwise.
+        """
+        # Sanitize filename to prevent path traversal
+        safe_filename = sanitize_filename(filename)
+        path = self.images_dir / safe_filename
+
+        # Validate the path is within the expected directory
+        if not validate_path_in_directory(path, self.images_dir):
+            return None
+
         if path.exists() and path.is_file():
             return path
         return None
 
     def delete_image(self, filename: str) -> bool:
-        """Delete an image and its annotations."""
-        image_path = self.images_dir / filename
-        annotation_path = self._get_annotation_path(filename)
+        """Delete an image and its annotations.
+
+        Args:
+            filename: The image filename to delete.
+
+        Returns:
+            True if any files were deleted, False otherwise.
+        """
+        # Sanitize filename to prevent path traversal
+        safe_filename = sanitize_filename(filename)
+        image_path = self.images_dir / safe_filename
+
+        # Validate the path is within the expected directory
+        if not validate_path_in_directory(image_path, self.images_dir):
+            return False
+
+        annotation_path = self._get_annotation_path(safe_filename)
 
         deleted = False
         if image_path.exists():
@@ -161,9 +206,51 @@ class AnnotationService:
 
         return deleted
 
+    def mark_image_done(self, filename: str, done: bool = True) -> bool:
+        """Mark an image as done (annotation complete).
+
+        Args:
+            filename: The image filename.
+            done: Whether the image is done (default True).
+
+        Returns:
+            True if the image was found and updated, False otherwise.
+        """
+        metadata = self.load_metadata(filename)
+        if metadata is None:
+            return False
+        metadata.done = done
+        self._save_metadata(metadata)
+        return True
+
+    def get_image_done_status(self, filename: str) -> bool | None:
+        """Get the done status of an image.
+
+        Returns:
+            True/False if image exists, None if not found.
+        """
+        metadata = self.load_metadata(filename)
+        if metadata is None:
+            return None
+        return metadata.done
+
+    def get_all_done_status(self) -> dict[str, bool]:
+        """Get done status for all images.
+
+        Returns:
+            Dictionary mapping filename to done status.
+        """
+        result: dict[str, bool] = {}
+        for annotation_file in self.annotations_dir.glob("*.json"):
+            with annotation_file.open("r") as f:
+                data = json.load(f)
+            metadata = ImageMetadata.model_validate(data)
+            result[metadata.image.filename] = metadata.done
+        return result
+
     def get_annotations(self, image_filename: str) -> list[Annotation]:
         """Get all annotations for an image."""
-        metadata = self._load_metadata(image_filename)
+        metadata = self.load_metadata(image_filename)
         if metadata is None:
             return []
         return metadata.annotations
@@ -183,16 +270,16 @@ class AnnotationService:
         Raises:
             FileNotFoundError: If the image doesn't exist.
         """
-        metadata = self._load_metadata(image_filename)
+        metadata = self.load_metadata(image_filename)
         if metadata is None:
             image_path = self.images_dir / image_filename
             if not image_path.exists():
                 raise FileNotFoundError(f"Image not found: {image_filename}")
             # Create metadata if missing
-            img = Image.open(image_path)
-            image_info = ImageInfo(
-                filename=image_filename, width=img.width, height=img.height
-            )
+            with Image.open(image_path) as img:
+                image_info = ImageInfo(
+                    filename=image_filename, width=img.width, height=img.height
+                )
             metadata = ImageMetadata(image=image_info, annotations=[])
 
         new_annotation = Annotation(
@@ -210,7 +297,7 @@ class AnnotationService:
         self, image_filename: str, annotation_id: str, update: AnnotationUpdate
     ) -> Annotation | None:
         """Update an existing annotation."""
-        metadata = self._load_metadata(image_filename)
+        metadata = self.load_metadata(image_filename)
         if metadata is None:
             return None
 
@@ -227,7 +314,7 @@ class AnnotationService:
 
     def delete_annotation(self, image_filename: str, annotation_id: str) -> bool:
         """Delete an annotation from an image."""
-        metadata = self._load_metadata(image_filename)
+        metadata = self.load_metadata(image_filename)
         if metadata is None:
             return False
 
@@ -244,7 +331,7 @@ class AnnotationService:
 
     def clear_annotations(self, image_filename: str) -> int:
         """Clear all annotations for an image."""
-        metadata = self._load_metadata(image_filename)
+        metadata = self.load_metadata(image_filename)
         if metadata is None:
             return 0
 
@@ -259,11 +346,11 @@ class AnnotationService:
 
         Useful for batch operations on similar flyer pages.
         """
-        source_metadata = self._load_metadata(source_filename)
+        source_metadata = self.load_metadata(source_filename)
         if source_metadata is None:
             return 0
 
-        target_metadata = self._load_metadata(target_filename)
+        target_metadata = self.load_metadata(target_filename)
         if target_metadata is None:
             return 0
 

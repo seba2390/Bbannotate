@@ -1,4 +1,4 @@
-.PHONY: clean install test dev frontend-install frontend-dev frontend-build stop
+.PHONY: clean install test dev frontend-install frontend-dev frontend-build stop wheel lint lint-fix format
 
 # Python configuration
 PYTHON = python3.12
@@ -30,6 +30,7 @@ clean:
 	rm -f package-lock.json
 	rm -f $(FRONTEND_DIR)/package-lock.json
 	rm -rf dist
+	rm -rf projects
 	@echo "Clean complete!"
 
 # Install frontend dependencies
@@ -104,20 +105,45 @@ type-check:
 	@echo "Running type check with pyright..."
 	$(VENV_BIN)/pyright $(SRC_DIR)
 
+# Lint Python code using ruff
+lint-python:
+	@echo "Running ruff check..."
+	$(VENV_BIN)/ruff check $(SRC_DIR) $(TEST_DIR)
+
+# Lint all code (Python + frontend)
+lint: lint-python frontend-lint type-check
+	@echo "All linting complete!"
+
 # Fix Python code in src folder using ruff
-fix:
+fix-python:
 	@echo "Running ruff fix..."
-	$(VENV_BIN)/ruff check --fix $(SRC_DIR)
+	$(VENV_BIN)/ruff check --fix $(SRC_DIR) $(TEST_DIR)
 
-# Format Python code in src folder using ruff
-format:
+# Fix Python lint issues (alias for fix-python + frontend-lint-fix)
+lint-fix: fix-python frontend-lint-fix
+	@echo "All lint fixes complete!"
+
+# Fix all code (Python + frontend)
+fix: fix-python frontend-lint-fix
+	@echo "All fixes complete!"
+
+# Format Python code using ruff
+format-python:
 	@echo "Running ruff format..."
-	$(VENV_BIN)/ruff format $(SRC_DIR)
+	$(VENV_BIN)/ruff format $(SRC_DIR) $(TEST_DIR)
 
-# Run tests with pytest
-test:
-	@echo "Running tests with pytest..."
+# Format all code (Python + frontend)
+format: format-python frontend-format
+	@echo "All formatting complete!"
+
+# Run Python tests with pytest
+test-python:
+	@echo "Running Python tests with pytest..."
 	$(VENV_BIN)/pytest $(TEST_DIR) -v
+
+# Run all tests (Python + frontend)
+test: test-python frontend-test-run
+	@echo "All tests complete!"
 
 # Run tests with coverage report
 test-cov:
@@ -142,8 +168,21 @@ frontend-format:
 	@echo "Formatting frontend code..."
 	cd $(FRONTEND_DIR) && npm run format
 
+# Frontend testing
+frontend-test:
+	@echo "Running frontend tests..."
+	cd $(FRONTEND_DIR) && npm run test
+
+frontend-test-run:
+	@echo "Running frontend tests (single run)..."
+	cd $(FRONTEND_DIR) && npm run test:run
+
+frontend-test-cov:
+	@echo "Running frontend tests with coverage..."
+	cd $(FRONTEND_DIR) && npm run test:coverage
+
 # Run all checks
-check-all: type-check fix format test frontend-type-check frontend-lint
+check-all: type-check fix format test frontend-type-check frontend-lint frontend-test-run
 	@echo "All checks complete!"
 
 # Build package for distribution
@@ -153,16 +192,23 @@ build:
 	$(VENV_BIN)/python -m build
 	@echo "Package built in dist/"
 
+# Build wheel for distribution (matches publish.yml workflow)
+wheel: frontend-build
+	@echo "Building wheel..."
+	$(VENV_BIN)/pip install build
+	$(VENV_BIN)/python -m build --wheel
+	@echo "Wheel built in dist/"
+
 # Publish to PyPI (requires twine and PyPI credentials)
-publish:
-	@echo "Publishing to PyPI..."
-	$(VENV_BIN)/pip install twine
-	$(VENV_BIN)/twine upload dist/*
-	@echo "Published to PyPI!"
+#publish:
+#	@echo "Publishing to PyPI..."
+#	$(VENV_BIN)/pip install twine
+#	$(VENV_BIN)/twine upload dist/*
+#	@echo "Published to PyPI!"
 
 # Publish to TestPyPI (for testing)
-publish-test:
-	@echo "Publishing to TestPyPI..."
-	$(VENV_BIN)/pip install twine
-	$(VENV_BIN)/twine upload --repository testpypi dist/*
-	@echo "Published to TestPyPI!"
+#publish-test:
+#	@echo "Publishing to TestPyPI..."
+#	$(VENV_BIN)/pip install twine
+#	$(VENV_BIN)/twine upload --repository testpypi dist/*
+#	@echo "Published to TestPyPI!"
