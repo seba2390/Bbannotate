@@ -360,13 +360,11 @@ function App(): JSX.Element {
           </div>
         </div>
 
-        {/* Center section: Logo */}
+        {/* Center section: Stylized app name */}
         <div className="flex items-center justify-center">
-          <img
-            src="/logo.png"
-            alt="BBannotate Logo"
-            className="h-8 object-contain"
-          />
+          <h2 className="bg-gradient-to-r from-primary-500 via-purple-500 to-pink-500 bg-clip-text text-xl font-extrabold tracking-tight text-transparent">
+            Bbannotate
+          </h2>
         </div>
 
         {/* Right section: Progress indicator & dark mode */}

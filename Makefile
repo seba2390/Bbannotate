@@ -30,6 +30,7 @@ clean:
 	rm -f package-lock.json
 	rm -f $(FRONTEND_DIR)/package-lock.json
 	rm -rf dist
+	rm -rf projects
 	@echo "Clean complete!"
 
 # Install frontend dependencies
