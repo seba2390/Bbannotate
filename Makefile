@@ -1,4 +1,4 @@
-.PHONY: clean install test dev frontend-install frontend-dev frontend-build stop wheel
+.PHONY: clean install test dev frontend-install frontend-dev frontend-build stop wheel lint lint-fix format
 
 # Python configuration
 PYTHON = python3.12
@@ -105,19 +105,32 @@ type-check:
 	@echo "Running type check with pyright..."
 	$(VENV_BIN)/pyright $(SRC_DIR)
 
+# Lint Python code using ruff
+lint-python:
+	@echo "Running ruff check..."
+	$(VENV_BIN)/ruff check $(SRC_DIR) $(TEST_DIR)
+
+# Lint all code (Python + frontend)
+lint: lint-python frontend-lint type-check
+	@echo "All linting complete!"
+
 # Fix Python code in src folder using ruff
 fix-python:
 	@echo "Running ruff fix..."
-	$(VENV_BIN)/ruff check --fix $(SRC_DIR)
+	$(VENV_BIN)/ruff check --fix $(SRC_DIR) $(TEST_DIR)
+
+# Fix Python lint issues (alias for fix-python + frontend-lint-fix)
+lint-fix: fix-python frontend-lint-fix
+	@echo "All lint fixes complete!"
 
 # Fix all code (Python + frontend)
 fix: fix-python frontend-lint-fix
 	@echo "All fixes complete!"
 
-# Format Python code in src folder using ruff
+# Format Python code using ruff
 format-python:
 	@echo "Running ruff format..."
-	$(VENV_BIN)/ruff format $(SRC_DIR)
+	$(VENV_BIN)/ruff format $(SRC_DIR) $(TEST_DIR)
 
 # Format all code (Python + frontend)
 format: format-python frontend-format
