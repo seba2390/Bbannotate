@@ -128,9 +128,8 @@ class AnnotationService:
 
         try:
             img = Image.open(BytesIO(content))
-            img.verify()  # Verify it's a valid image
-            img = Image.open(BytesIO(content))  # Re-open after verify
             width, height = img.size
+            img.verify()  # Verify it's a valid image (must be after size read)
         except Exception as err:
             raise ValueError(f"Invalid image file: {err}") from err
 

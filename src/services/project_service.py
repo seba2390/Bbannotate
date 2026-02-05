@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from src.utils import sanitize_name_for_path
+from src.utils import sanitize_name_for_path, validate_path_in_directory
 
 
 class Project(BaseModel):
@@ -182,10 +182,17 @@ class ProjectService:
 
         Returns:
             True if deleted, False if not found.
+
+        Raises:
+            ValueError: If project path is outside the base directory.
         """
         project_dir = self._get_project_dir(project_id)
         if not project_dir.exists():
             return False
+
+        # Security: Validate path stays within base_dir to prevent path traversal
+        if not validate_path_in_directory(project_dir, self.base_dir):
+            raise ValueError(f"Invalid project path: {project_id}")
 
         shutil.rmtree(project_dir)
         return True

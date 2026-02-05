@@ -89,6 +89,7 @@ function App(): JSX.Element {
     currentImage,
     currentIndex,
     loading: imagesLoading,
+    error: imagesError,
     uploadImages,
     selectImage,
     nextImage,
@@ -101,6 +102,7 @@ function App(): JSX.Element {
     annotations,
     selectedId,
     loading: annotationsLoading,
+    error: annotationsError,
     loadAnnotations,
     addAnnotation,
     updateAnnotation,
@@ -157,6 +159,19 @@ function App(): JSX.Element {
       localStorage.setItem('darkMode', 'false');
     }
   }, [darkMode]);
+
+  // Show errors from hooks as toasts
+  useEffect(() => {
+    if (imagesError) {
+      addToast(imagesError, 'error');
+    }
+  }, [imagesError, addToast]);
+
+  useEffect(() => {
+    if (annotationsError) {
+      addToast(annotationsError, 'error');
+    }
+  }, [annotationsError, addToast]);
 
   // Load project info and done status for progress tracking
   useEffect(() => {

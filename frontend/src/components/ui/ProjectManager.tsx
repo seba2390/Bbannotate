@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Project } from '@/types';
 import { listProjects, createProject, deleteProject, openProject } from '@/lib/api';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface ProjectManagerProps {
   onOpenProject: (project: Project) => void;
@@ -15,6 +16,7 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
   const [creating, setCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
   const loadProjects = useCallback(async (): Promise<void> => {
     try {
@@ -60,15 +62,19 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
   };
 
   const handleDeleteProject = async (project: Project): Promise<void> => {
-    if (!confirm(`Delete "${project.name}" and all its data? This cannot be undone.`)) {
-      return;
-    }
+    setProjectToDelete(project);
+  };
+
+  const confirmDeleteProject = async (): Promise<void> => {
+    if (!projectToDelete) return;
 
     try {
-      await deleteProject(project.id);
+      await deleteProject(projectToDelete.id);
       await loadProjects();
     } catch {
       setError('Failed to delete project');
+    } finally {
+      setProjectToDelete(null);
     }
   };
 
@@ -207,6 +213,18 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
           )}
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        isOpen={projectToDelete !== null}
+        title="Delete Project"
+        message={`Delete "${projectToDelete?.name}" and all its data? This cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={confirmDeleteProject}
+        onCancel={() => setProjectToDelete(null)}
+        destructive
+      />
     </div>
   );
 }

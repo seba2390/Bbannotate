@@ -28,6 +28,7 @@ from src.models.annotations import (
 from src.services.annotation_service import AnnotationService
 from src.services.export_service import ExportService
 from src.services.project_service import Project, ProjectCreate, ProjectService
+from src.utils import validate_path_in_directory
 
 router = APIRouter()
 
@@ -84,11 +85,21 @@ def get_annotation_service(
 
     Returns:
         AnnotationService configured for the specified project.
+
+    Raises:
+        HTTPException: If project ID is invalid or path traversal is detected.
     """
     if project_id:
-        project_service = ProjectService(get_projects_dir())
+        projects_dir = get_projects_dir()
+        project_service = ProjectService(projects_dir)
         data_dir = project_service.get_project_data_dir(project_id)
         if data_dir:
+            # Security: Validate path stays within projects directory
+            if not validate_path_in_directory(data_dir, projects_dir):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid project ID",
+                )
             return AnnotationService(data_dir)
     # Fallback to legacy data directory
     return AnnotationService(get_data_dir())
@@ -351,6 +362,12 @@ def export_yolo(
     test_split: Annotated[float, Query(ge=0.0, le=0.5)] = 0.1,
 ) -> FileResponse:
     """Export annotations in YOLO format as a ZIP file."""
+    # Validate splits sum to at most 1.0
+    if train_split + val_split + test_split > 1.0:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Split values must sum to at most 1.0 (got {train_split + val_split + test_split:.2f})",
+        )
     zip_path = export_service.export_yolo_zip(train_split, val_split, test_split)
     return FileResponse(
         zip_path,

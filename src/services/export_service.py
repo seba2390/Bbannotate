@@ -1,10 +1,13 @@
 """Service for exporting annotations to various formats."""
 
+import logging
 import shutil
 import zipfile
 from pathlib import Path
 
 from src.services.annotation_service import AnnotationService
+
+logger = logging.getLogger(__name__)
 
 
 class ExportService:
@@ -22,9 +25,13 @@ class ExportService:
         """Get sorted list of all unique labels in the project."""
         labels: set[str] = set()
         for filename in self.annotation_service.list_images():
-            annotations = self.annotation_service.get_annotations(filename)
-            for ann in annotations:
-                labels.add(ann.label)
+            try:
+                annotations = self.annotation_service.get_annotations(filename)
+                for ann in annotations:
+                    labels.add(ann.label)
+            except Exception:
+                logger.warning("Skipping corrupt annotation file for %s", filename)
+                continue
         return sorted(labels)
 
     def export_yolo(
