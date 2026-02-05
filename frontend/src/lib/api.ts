@@ -64,12 +64,8 @@ export async function uploadImage(file: File): Promise<ImageInfo> {
 }
 
 export async function uploadImages(files: File[]): Promise<ImageInfo[]> {
-  const results: ImageInfo[] = [];
-  for (const file of files) {
-    const info = await uploadImage(file);
-    results.push(info);
-  }
-  return results;
+  const uploads = files.map((file) => uploadImage(file));
+  return Promise.all(uploads);
 }
 
 export function getImageUrl(filename: string): string {
@@ -78,6 +74,22 @@ export function getImageUrl(filename: string): string {
 
 export async function deleteImage(filename: string): Promise<void> {
   await api.delete(`/images/${encodeURIComponent(filename)}`);
+}
+
+export async function markImageDone(filename: string, done: boolean = true): Promise<void> {
+  await api.patch(`/images/${encodeURIComponent(filename)}/done?done=${done}`);
+}
+
+export async function getImageDoneStatus(filename: string): Promise<boolean> {
+  const response = await api.get<{ done: boolean }>(
+    `/images/${encodeURIComponent(filename)}/done`
+  );
+  return response.data.done;
+}
+
+export async function getAllDoneStatus(): Promise<Record<string, boolean>> {
+  const response = await api.get<Record<string, boolean>>('/images/done-status');
+  return response.data;
 }
 
 /** Annotation API */

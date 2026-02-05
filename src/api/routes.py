@@ -200,6 +200,39 @@ def delete_image(
     return {"success": True}
 
 
+@router.patch("/images/{filename}/done")
+def mark_image_done(
+    filename: str,
+    service: Annotated[AnnotationService, Depends(get_annotation_service)],
+    done: Annotated[bool, Query(description="Mark image as done")] = True,
+) -> dict[str, bool]:
+    """Mark an image as done (annotation complete)."""
+    success = service.mark_image_done(filename, done)
+    if not success:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return {"success": True, "done": done}
+
+
+@router.get("/images/{filename}/done")
+def get_image_done_status(
+    filename: str,
+    service: Annotated[AnnotationService, Depends(get_annotation_service)],
+) -> dict[str, bool]:
+    """Get the done status of an image."""
+    done = service.get_image_done_status(filename)
+    if done is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return {"done": done}
+
+
+@router.get("/images/done-status", response_model=dict[str, bool])
+def get_all_done_status(
+    service: Annotated[AnnotationService, Depends(get_annotation_service)],
+) -> dict[str, bool]:
+    """Get done status for all images."""
+    return service.get_all_done_status()
+
+
 # Annotation endpoints
 @router.get("/images/{filename}/annotations", response_model=list[Annotation])
 def get_annotations(

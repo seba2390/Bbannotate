@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from src.utils import sanitize_name_for_path
+
 
 class Project(BaseModel):
     """Represents an annotation project."""
@@ -51,11 +53,7 @@ class ProjectService:
 
     def _generate_project_id(self, name: str) -> str:
         """Generate a unique project ID from name and timestamp."""
-        # Sanitize name for use in directory
-        sanitized = "".join(
-            c if c.isalnum() or c in "-_" else "_" for c in name.lower()
-        )
-        sanitized = sanitized[:50]  # Limit length
+        sanitized = sanitize_name_for_path(name)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"{sanitized}_{timestamp}"
 

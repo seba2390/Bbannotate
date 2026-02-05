@@ -50,6 +50,7 @@ class ImageMetadata(BaseModel):
 
     image: ImageInfo
     annotations: list[Annotation] = Field(default_factory=list)
+    done: bool = Field(default=False, description="Whether the image annotation is complete")
 
 
 class ProjectInfo(BaseModel):
@@ -60,3 +61,4 @@ class ProjectInfo(BaseModel):
     image_count: int = 0
     annotation_count: int = 0
     annotated_image_count: int = 0
+    done_image_count: int = Field(default=0, description="Number of images marked as done")

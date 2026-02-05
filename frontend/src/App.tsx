@@ -10,7 +10,7 @@ import {
   ExportDialog,
 } from '@/components';
 import { useAnnotations, useImages } from '@/hooks';
-import { getImageUrl, getProjectInfo, closeProject } from '@/lib/api';
+import { getImageUrl, getProjectInfo, closeProject, markImageDone, getAllDoneStatus } from '@/lib/api';
 import type { ToolMode, DrawingRect, BoundingBox, Project } from '@/types';
 
 /** Default labels for grocery flyer annotation */
@@ -64,7 +64,8 @@ function App(): JSX.Element {
     }
     return false;
   });
-  const [annotatedCount, setAnnotatedCount] = useState(0);
+  const [doneCount, setDoneCount] = useState(0);
+  const [doneStatus, setDoneStatus] = useState<Record<string, boolean>>({});
 
   const {
     images,
@@ -106,6 +107,8 @@ function App(): JSX.Element {
   const handleCloseProject = useCallback(async (): Promise<void> => {
     await closeProject();
     setCurrentProject(null);
+    setDoneStatus({});
+    setDoneCount(0);
   }, []);
 
   // Load annotations when image changes
@@ -126,18 +129,21 @@ function App(): JSX.Element {
     }
   }, [darkMode]);
 
-  // Load project info for progress tracking
+  // Load project info and done status for progress tracking
   useEffect(() => {
     const loadProgress = async (): Promise<void> => {
       try {
-        const info = await getProjectInfo();
-        setAnnotatedCount(info.annotated_image_count);
+        const [info, status] = await Promise.all([getProjectInfo(), getAllDoneStatus()]);
+        setDoneCount(info.done_image_count);
+        setDoneStatus(status);
       } catch {
         // Ignore errors
       }
     };
-    loadProgress();
-  }, [images, annotations]);
+    if (currentProject) {
+      loadProgress();
+    }
+  }, [currentProject, images]);
 
   // Handle delete annotation (exposed for keyboard shortcut)
   const handleDeleteSelected = useCallback((): void => {
@@ -257,6 +263,47 @@ function App(): JSX.Element {
     setShowExportDialog(true);
   }, []);
 
+  // Handle marking image as done
+  const handleMarkDone = useCallback(async (): Promise<void> => {
+    if (!currentImage) return;
+
+    const isCurrentlyDone = doneStatus[currentImage] ?? false;
+
+    // If already done, allow toggling it off
+    if (isCurrentlyDone) {
+      try {
+        await markImageDone(currentImage, false);
+        setDoneStatus((prev) => ({ ...prev, [currentImage]: false }));
+        setDoneCount((prev) => Math.max(0, prev - 1));
+      } catch {
+        // Ignore errors
+      }
+      return;
+    }
+
+    // If no annotations, ask if user wants to remove the image
+    if (annotations.length === 0) {
+      const shouldRemove = confirm(
+        `This image has no annotations.\n\nDo you want to remove it from the project?`
+      );
+      if (shouldRemove) {
+        deleteImage(currentImage);
+      }
+      return;
+    }
+
+    // Mark as done, update progress, and go to next image
+    try {
+      await markImageDone(currentImage, true);
+      setDoneStatus((prev) => ({ ...prev, [currentImage]: true }));
+      setDoneCount((prev) => prev + 1);
+      // Go to next image
+      nextImage();
+    } catch {
+      // Ignore errors
+    }
+  }, [currentImage, annotations, doneStatus, deleteImage, nextImage]);
+
   // Handle label updates from LabelManager
   const handleLabelsChange = useCallback(
     (newLabels: string[]): void => {
@@ -290,7 +337,8 @@ function App(): JSX.Element {
     <div className="flex h-screen flex-col bg-white dark:bg-gray-900">
       {/* Header */}
       <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex items-center gap-3">
+        {/* Left section: Back button & project name */}
+        <div className="flex flex-1 items-center gap-3">
           <button
             onClick={handleCloseProject}
             className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
@@ -311,19 +359,30 @@ function App(): JSX.Element {
             </h1>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+
+        {/* Center section: Logo */}
+        <div className="flex items-center justify-center">
+          <img
+            src="/logo.png"
+            alt="BBannotate Logo"
+            className="h-8 object-contain"
+          />
+        </div>
+
+        {/* Right section: Progress indicator & dark mode */}
+        <div className="flex flex-1 items-center justify-end gap-4">
           {/* Progress indicator */}
           <div className="flex items-center gap-2">
             <div className="h-2 w-32 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
               <div
                 className="h-full rounded-full bg-green-500 transition-all duration-300"
                 style={{
-                  width: images.length > 0 ? `${(annotatedCount / images.length) * 100}%` : '0%',
+                  width: images.length > 0 ? `${(doneCount / images.length) * 100}%` : '0%',
                 }}
               />
             </div>
             <span className="text-sm text-gray-600 dark:text-gray-300">
-              {annotatedCount}/{images.length}
+              {doneCount}/{images.length}
             </span>
           </div>
           {/* Dark mode toggle */}
@@ -361,6 +420,8 @@ function App(): JSX.Element {
         onClearAnnotations={handleClearAnnotations}
         onExport={handleExport}
         onManageLabels={() => setShowLabelManager(true)}
+        onMarkDone={handleMarkDone}
+        isCurrentImageDone={currentImage ? (doneStatus[currentImage] ?? false) : false}
         imageIndex={currentIndex}
         imageCount={images.length}
       />
@@ -389,6 +450,7 @@ function App(): JSX.Element {
             <ImageList
               images={images}
               currentImage={currentImage}
+              doneStatus={doneStatus}
               onSelectImage={selectImage}
               onDeleteImage={handleDeleteImage}
             />

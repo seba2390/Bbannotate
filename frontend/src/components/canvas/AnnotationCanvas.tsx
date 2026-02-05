@@ -179,6 +179,14 @@ export function AnnotationCanvas({
     }
   }, [selectedId, toolMode, annotations]);
 
+  // Stop auto-pan animation
+  const stopAutoPan = useCallback((): void => {
+    if (autoPanRef.current !== null) {
+      cancelAnimationFrame(autoPanRef.current);
+      autoPanRef.current = null;
+    }
+  }, []);
+
   // Handle Escape to cancel drawing (other keys handled in App.tsx)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
@@ -191,15 +199,7 @@ export function AnnotationCanvas({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDrawing]);
-
-  // Stop auto-pan animation
-  const stopAutoPan = useCallback((): void => {
-    if (autoPanRef.current !== null) {
-      cancelAnimationFrame(autoPanRef.current);
-      autoPanRef.current = null;
-    }
-  }, []);
+  }, [isDrawing, stopAutoPan]);
 
   // Cleanup auto-pan on unmount
   useEffect(() => {

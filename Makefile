@@ -105,19 +105,31 @@ type-check:
 	$(VENV_BIN)/pyright $(SRC_DIR)
 
 # Fix Python code in src folder using ruff
-fix:
+fix-python:
 	@echo "Running ruff fix..."
 	$(VENV_BIN)/ruff check --fix $(SRC_DIR)
 
+# Fix all code (Python + frontend)
+fix: fix-python frontend-lint-fix
+	@echo "All fixes complete!"
+
 # Format Python code in src folder using ruff
-format:
+format-python:
 	@echo "Running ruff format..."
 	$(VENV_BIN)/ruff format $(SRC_DIR)
 
-# Run tests with pytest
-test:
-	@echo "Running tests with pytest..."
+# Format all code (Python + frontend)
+format: format-python frontend-format
+	@echo "All formatting complete!"
+
+# Run Python tests with pytest
+test-python:
+	@echo "Running Python tests with pytest..."
 	$(VENV_BIN)/pytest $(TEST_DIR) -v
+
+# Run all tests (Python + frontend)
+test: test-python frontend-test-run
+	@echo "All tests complete!"
 
 # Run tests with coverage report
 test-cov:
@@ -142,8 +154,21 @@ frontend-format:
 	@echo "Formatting frontend code..."
 	cd $(FRONTEND_DIR) && npm run format
 
+# Frontend testing
+frontend-test:
+	@echo "Running frontend tests..."
+	cd $(FRONTEND_DIR) && npm run test
+
+frontend-test-run:
+	@echo "Running frontend tests (single run)..."
+	cd $(FRONTEND_DIR) && npm run test:run
+
+frontend-test-cov:
+	@echo "Running frontend tests with coverage..."
+	cd $(FRONTEND_DIR) && npm run test:coverage
+
 # Run all checks
-check-all: type-check fix format test frontend-type-check frontend-lint
+check-all: type-check fix format test frontend-type-check frontend-lint frontend-test-run
 	@echo "All checks complete!"
 
 # Build package for distribution

@@ -15,6 +15,7 @@ from src.models.annotations import (
     ImageMetadata,
     ProjectInfo,
 )
+from src.utils import sanitize_filename
 
 
 class AnnotationService:
@@ -63,6 +64,7 @@ class AnnotationService:
         total_annotations = 0
         image_count = 0
         annotated_image_count = 0
+        done_image_count = 0
 
         for annotation_file in self.annotations_dir.glob("*.json"):
             with annotation_file.open("r") as f:
@@ -73,6 +75,8 @@ class AnnotationService:
             total_annotations += annotation_count
             if annotation_count > 0:
                 annotated_image_count += 1
+            if metadata.done:
+                done_image_count += 1
             for ann in metadata.annotations:
                 labels.add(ann.label)
 
@@ -81,6 +85,7 @@ class AnnotationService:
             image_count=image_count,
             annotation_count=total_annotations,
             annotated_image_count=annotated_image_count,
+            done_image_count=done_image_count,
         )
 
     def list_images(self) -> list[str]:
@@ -117,7 +122,7 @@ class AnnotationService:
             raise ValueError(f"Invalid image file: {err}") from err
 
         # Save image
-        safe_filename = Path(filename).name  # Prevent path traversal
+        safe_filename = sanitize_filename(filename)
         image_path = self.images_dir / safe_filename
 
         # Handle duplicate filenames
@@ -160,6 +165,48 @@ class AnnotationService:
             deleted = True
 
         return deleted
+
+    def mark_image_done(self, filename: str, done: bool = True) -> bool:
+        """Mark an image as done (annotation complete).
+
+        Args:
+            filename: The image filename.
+            done: Whether the image is done (default True).
+
+        Returns:
+            True if the image was found and updated, False otherwise.
+        """
+        metadata = self._load_metadata(filename)
+        if metadata is None:
+            return False
+        metadata.done = done
+        self._save_metadata(metadata)
+        return True
+
+    def get_image_done_status(self, filename: str) -> bool | None:
+        """Get the done status of an image.
+
+        Returns:
+            True/False if image exists, None if not found.
+        """
+        metadata = self._load_metadata(filename)
+        if metadata is None:
+            return None
+        return metadata.done
+
+    def get_all_done_status(self) -> dict[str, bool]:
+        """Get done status for all images.
+
+        Returns:
+            Dictionary mapping filename to done status.
+        """
+        result: dict[str, bool] = {}
+        for annotation_file in self.annotations_dir.glob("*.json"):
+            with annotation_file.open("r") as f:
+                data = json.load(f)
+            metadata = ImageMetadata.model_validate(data)
+            result[metadata.image.filename] = metadata.done
+        return result
 
     def get_annotations(self, image_filename: str) -> list[Annotation]:
         """Get all annotations for an image."""

@@ -4,6 +4,7 @@ interface ToolbarProps {
   toolMode: ToolMode;
   currentLabel: string;
   labels: string[];
+  isCurrentImageDone: boolean;
   onToolModeChange: (mode: ToolMode) => void;
   onLabelChange: (label: string) => void;
   onPrevImage: () => void;
@@ -11,22 +12,25 @@ interface ToolbarProps {
   onClearAnnotations: () => void;
   onExport: () => void;
   onManageLabels: () => void;
+  onMarkDone: () => void;
   imageIndex: number;
   imageCount: number;
 }
 
 /**
- * Main toolbar with label selection and navigation.
+ * Main toolbar with label selection, navigation, and done button.
  */
 export function Toolbar({
   currentLabel,
   labels,
+  isCurrentImageDone,
   onLabelChange,
   onPrevImage,
   onNextImage,
   onClearAnnotations,
   onExport,
   onManageLabels,
+  onMarkDone,
   imageIndex,
   imageCount,
 }: ToolbarProps): JSX.Element {
@@ -68,7 +72,7 @@ export function Toolbar({
         </button>
       </div>
 
-      {/* Navigation */}
+      {/* Navigation & Actions */}
       <div className="flex items-center gap-2">
         <button
           onClick={onPrevImage}
@@ -88,6 +92,31 @@ export function Toolbar({
           title="Next image (→)"
         >
           Next →
+        </button>
+
+        <div className="mx-2 h-6 w-px bg-gray-200 dark:bg-gray-600" />
+
+        {/* Done button */}
+        <button
+          onClick={onMarkDone}
+          disabled={imageCount === 0}
+          className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 ${
+            isCurrentImageDone
+              ? 'border border-green-500 bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50'
+              : 'bg-green-600 text-white hover:bg-green-700'
+          }`}
+          title={isCurrentImageDone ? 'Image marked as done (click to undo)' : 'Mark image as done'}
+        >
+          {isCurrentImageDone ? (
+            <span className="flex items-center gap-1">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Done
+            </span>
+          ) : (
+            'Done ✓'
+          )}
         </button>
 
         <div className="mx-2 h-6 w-px bg-gray-200 dark:bg-gray-600" />
