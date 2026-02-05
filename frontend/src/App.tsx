@@ -22,8 +22,8 @@ import {
 } from '@/lib/api';
 import type { ToolMode, DrawingRect, BoundingBox, Project } from '@/types';
 
-/** Default labels for grocery flyer annotation */
-const DEFAULT_LABELS = ['product', 'price', 'brand', 'promo'];
+/** Default labels - empty so users define their own */
+const DEFAULT_LABELS: string[] = [];
 
 /** Load labels from localStorage or use defaults */
 function loadLabels(): string[] {
@@ -264,6 +264,12 @@ function App(): JSX.Element {
   const handleAddAnnotation = useCallback(
     (rect: DrawingRect, imageWidth: number, imageHeight: number) => {
       if (!currentImage) return;
+      // If no labels defined, prompt user to create one first
+      if (labels.length === 0) {
+        setShowLabelManager(true);
+        addToast('Please create a label first before annotating', 'info');
+        return;
+      }
       const classId = labels.indexOf(currentLabel);
       addAnnotation(
         currentImage,
@@ -274,7 +280,7 @@ function App(): JSX.Element {
         imageHeight
       );
     },
-    [currentImage, currentLabel, labels, addAnnotation]
+    [currentImage, currentLabel, labels, addAnnotation, addToast]
   );
 
   const handleUpdateBbox = useCallback(
@@ -429,7 +435,7 @@ function App(): JSX.Element {
         </div>
 
         {/* Center section: Stylized app name */}
-        <div className="flex items-center justify-center">
+        <div className="flex flex-1 items-center justify-center">
           <h2 className="bg-gradient-to-r from-primary-500 via-purple-500 to-pink-500 bg-clip-text text-xl font-extrabold tracking-tight text-transparent">
             Bbannotate
           </h2>
@@ -477,17 +483,10 @@ function App(): JSX.Element {
       {/* Toolbar */}
       <Toolbar
         toolMode={toolMode}
-        currentLabel={currentLabel}
-        labels={labels}
         onToolModeChange={setToolMode}
-        onLabelChange={setCurrentLabel}
         onPrevImage={prevImage}
         onNextImage={nextImage}
-        onClearAnnotations={handleClearAnnotations}
         onExport={handleExport}
-        onManageLabels={() => setShowLabelManager(true)}
-        onMarkDone={handleMarkDone}
-        isCurrentImageDone={currentImage ? (doneStatus[currentImage] ?? false) : false}
         imageIndex={currentIndex}
         imageCount={images.length}
       />
@@ -532,20 +531,79 @@ function App(): JSX.Element {
             toolMode={toolMode}
             currentLabel={currentLabel}
             currentClassId={labels.indexOf(currentLabel)}
+            labels={labels}
+            isCurrentImageDone={currentImage ? (doneStatus[currentImage] ?? false) : false}
             onSelectAnnotation={selectAnnotation}
             onAddAnnotation={handleAddAnnotation}
             onUpdateBbox={handleUpdateBbox}
             onDeleteAnnotation={handleDeleteAnnotation}
             onToolModeChange={setToolMode}
+            onMarkDone={handleMarkDone}
+            onLabelChange={setCurrentLabel}
           />
         </main>
 
         {/* Right sidebar - Annotations */}
         <aside className="flex w-64 flex-col border-l border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          {/* Labels section */}
           <div className="border-b border-gray-200 p-3 dark:border-gray-700">
-            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Annotations ({annotations.length})
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Labels ({labels.length})
+              </h2>
+              <button
+                onClick={() => setShowLabelManager(true)}
+                className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                title="Manage labels"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </button>
+            </div>
+            {labels.length === 0 ? (
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                No labels defined. Click the gear icon to add labels.
+              </p>
+            ) : (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {labels.map((label, idx) => (
+                  <span
+                    key={label}
+                    className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                  >
+                    {idx + 1}. {label}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Annotations section */}
+          <div className="border-b border-gray-200 p-3 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Annotations ({annotations.length})
+              </h2>
+              <button
+                onClick={handleClearAnnotations}
+                disabled={annotations.length === 0}
+                className="rounded px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-red-500 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-red-400"
+                title="Clear all annotations"
+              >
+                Clear
+              </button>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto">
             <AnnotationList

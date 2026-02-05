@@ -73,9 +73,19 @@ describe('API Client', () => {
       expect(results[1]?.filename).toBeDefined();
     });
 
-    it('should generate correct image URL', () => {
+    it('should generate correct image URL without project', () => {
+      // Ensure no project is set
+      api.setCurrentProjectId(null);
       const url = api.getImageUrl('test image.png');
       expect(url).toBe('/api/images/test%20image.png');
+    });
+
+    it('should include project_id in image URL when project is set', () => {
+      api.setCurrentProjectId('my-project');
+      const url = api.getImageUrl('test image.png');
+      expect(url).toBe('/api/images/test%20image.png?project_id=my-project');
+      // Clean up
+      api.setCurrentProjectId(null);
     });
 
     it('should delete an image', async () => {

@@ -158,6 +158,38 @@ class TestImageEndpoints:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("image/")
 
+    def test_get_image_with_project_id_query_param(
+        self, client: TestClient, temp_data_dir: Path, sample_image: bytes
+    ) -> None:
+        """Test getting an image using project_id query parameter.
+
+        This tests the fix for browser <img> tags which cannot send custom headers.
+        The query parameter should work the same as the X-Project-Id header.
+        """
+        # Create a project first
+        create_response = client.post(
+            "/api/projects",
+            json={"name": "Test Project"},
+        )
+        project_id = create_response.json()["id"]
+
+        # Upload image to the project using header
+        client.post(
+            "/api/images",
+            files={"file": ("test.png", sample_image, "image/png")},
+            headers={"X-Project-Id": project_id},
+        )
+
+        # Get image using query parameter (simulating browser <img> behavior)
+        response = client.get(f"/api/images/test.png?project_id={project_id}")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("image/")
+
+        # Verify the image was fetched from the correct project directory
+        # (not from the legacy data directory)
+        response_content = response.content
+        assert len(response_content) > 0
+
     def test_delete_image(
         self, client: TestClient, temp_data_dir: Path, sample_image: bytes
     ) -> None:

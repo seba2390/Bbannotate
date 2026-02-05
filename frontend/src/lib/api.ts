@@ -13,11 +13,16 @@ const api = axios.create({
   baseURL: '/api',
 });
 
+// Track current project ID for image URL generation
+// (needed because <img> tags cannot include custom headers)
+let currentProjectId: string | null = null;
+
 /**
  * Set the current project ID for all subsequent API requests.
  * This is used for thread-safe, per-request project context.
  */
 export function setCurrentProjectId(projectId: string | null): void {
+  currentProjectId = projectId;
   if (projectId) {
     api.defaults.headers.common['X-Project-Id'] = projectId;
   } else {
@@ -85,7 +90,11 @@ export async function uploadImages(files: File[]): Promise<ImageInfo[]> {
 }
 
 export function getImageUrl(filename: string): string {
-  return `/api/images/${encodeURIComponent(filename)}`;
+  const baseUrl = `/api/images/${encodeURIComponent(filename)}`;
+  if (currentProjectId) {
+    return `${baseUrl}?project_id=${encodeURIComponent(currentProjectId)}`;
+  }
+  return baseUrl;
 }
 
 export async function deleteImage(filename: string): Promise<void> {

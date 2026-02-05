@@ -228,9 +228,36 @@ async def upload_image(
 @router.get("/images/{filename}")
 def get_image(
     filename: str,
-    service: Annotated[AnnotationService, Depends(get_annotation_service)],
+    project_id: Annotated[
+        str | None, Query(description="Project ID for image lookup")
+    ] = None,
+    header_project_id: Annotated[
+        str | None, Depends(get_project_id_from_header)
+    ] = None,
 ) -> FileResponse:
-    """Get an image file."""
+    """Get an image file.
+
+    Accepts project_id as query parameter (for browser <img> tags that cannot
+    send custom headers) or via X-Project-Id header (for axios requests).
+    Query parameter takes precedence if both are provided.
+    """
+    # Use query param if provided, otherwise fall back to header
+    effective_project_id = project_id or header_project_id
+
+    # Create annotation service with the resolved project ID
+    if effective_project_id:
+        projects_dir = get_projects_dir()
+        project_service = ProjectService(projects_dir)
+        data_dir = project_service.get_project_data_dir(effective_project_id)
+        if data_dir:
+            if not validate_path_in_directory(data_dir, projects_dir):
+                raise HTTPException(status_code=400, detail="Invalid project ID")
+            service = AnnotationService(data_dir)
+        else:
+            service = AnnotationService(get_data_dir())
+    else:
+        service = AnnotationService(get_data_dir())
+
     path = service.get_image_path(filename)
     if path is None:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -363,10 +390,11 @@ def export_yolo(
 ) -> FileResponse:
     """Export annotations in YOLO format as a ZIP file."""
     # Validate splits sum to at most 1.0
-    if train_split + val_split + test_split > 1.0:
+    total_split = train_split + val_split + test_split
+    if total_split > 1.0:
         raise HTTPException(
             status_code=422,
-            detail=f"Split values must sum to at most 1.0 (got {train_split + val_split + test_split:.2f})",
+            detail=f"Split values must sum to at most 1.0 (got {total_split:.2f})",
         )
     zip_path = export_service.export_yolo_zip(train_split, val_split, test_split)
     return FileResponse(
