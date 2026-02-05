@@ -1,42 +1,30 @@
 """FastAPI application entry point for the annotation tool."""
 
 import os
-from pathlib import Path
+from typing import cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from starlette.types import ExceptionHandler
 
 from src import __version__
-from src.api.routes import get_data_dir, router
-
-
-def _find_frontend_dist() -> Path | None:
-    """Find the frontend dist directory.
-
-    Checks in order:
-    1. Bundled with package (src/frontend_dist) - for pip install
-    2. Relative to package (frontend/dist) - for development
-    """
-    # Check bundled location (pip install includes frontend_dist in src/)
-    package_dir = Path(__file__).parent
-    bundled_path = package_dir / "frontend_dist"
-    if bundled_path.exists() and (bundled_path / "index.html").exists():
-        return bundled_path
-
-    # Check relative to package root (development mode with frontend/dist)
-    dev_path = package_dir.parent / "frontend" / "dist"
-    if dev_path.exists() and (dev_path / "index.html").exists():
-        return dev_path
-
-    return None
-
+from src.api.routes import get_data_dir, limiter, router
+from src.utils import find_frontend_dist
 
 # Create FastAPI app
 app = FastAPI(
     title="Bounding Box Annotation Tool",
     description="A lightweight annotation tool for grocery flyer product detection",
     version=__version__,
+)
+
+# Add rate limiter state and exception handler
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded, cast(ExceptionHandler, _rate_limit_exceeded_handler)
 )
 
 # Configure CORS for frontend development
@@ -68,7 +56,7 @@ def health_check() -> dict[str, str]:
 
 # Serve frontend static files in production
 # NOTE: Must be mounted after all other routes to avoid catching API requests
-FRONTEND_DIST = _find_frontend_dist()
+FRONTEND_DIST = find_frontend_dist()
 if FRONTEND_DIST:
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
 

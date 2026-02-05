@@ -63,7 +63,9 @@ export function ImageList({
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className={`truncate text-sm font-medium ${isDone ? 'text-green-700 dark:text-green-400' : 'text-gray-900 dark:text-gray-100'}`}>
+              <p
+                className={`truncate text-sm font-medium ${isDone ? 'text-green-700 dark:text-green-400' : 'text-gray-900 dark:text-gray-100'}`}
+              >
                 {index + 1}. {filename}
               </p>
             </div>

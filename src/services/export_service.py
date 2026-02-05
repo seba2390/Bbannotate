@@ -234,7 +234,7 @@ class ExportService:
 
         for img_id, filename in enumerate(self.annotation_service.list_images()):
             annotations = self.annotation_service.get_annotations(filename)
-            metadata = self.annotation_service._load_metadata(filename)
+            metadata = self.annotation_service.load_metadata(filename)
 
             if metadata is None:
                 continue
@@ -300,7 +300,7 @@ class ExportService:
 
         for filename in self.annotation_service.list_images():
             annotations = self.annotation_service.get_annotations(filename)
-            metadata = self.annotation_service._load_metadata(filename)
+            metadata = self.annotation_service.load_metadata(filename)
             source_path = self.annotation_service.get_image_path(filename)
 
             if metadata is None or source_path is None:
@@ -388,7 +388,7 @@ class ExportService:
 
         for filename in self.annotation_service.list_images():
             annotations = self.annotation_service.get_annotations(filename)
-            metadata = self.annotation_service._load_metadata(filename)
+            metadata = self.annotation_service.load_metadata(filename)
 
             if metadata is None:
                 continue
@@ -453,7 +453,7 @@ class ExportService:
 
             for filename in self.annotation_service.list_images():
                 annotations = self.annotation_service.get_annotations(filename)
-                metadata = self.annotation_service._load_metadata(filename)
+                metadata = self.annotation_service.load_metadata(filename)
 
                 if metadata is None:
                     continue

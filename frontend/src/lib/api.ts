@@ -13,6 +13,18 @@ const api = axios.create({
   baseURL: '/api',
 });
 
+/**
+ * Set the current project ID for all subsequent API requests.
+ * This is used for thread-safe, per-request project context.
+ */
+export function setCurrentProjectId(projectId: string | null): void {
+  if (projectId) {
+    api.defaults.headers.common['X-Project-Id'] = projectId;
+  } else {
+    delete api.defaults.headers.common['X-Project-Id'];
+  }
+}
+
 /** Project Management API */
 export async function listProjects(): Promise<Project[]> {
   const response = await api.get<Project[]>('/projects');
@@ -31,10 +43,14 @@ export async function getCurrentProject(): Promise<Project | null> {
 
 export async function openProject(projectId: string): Promise<Project> {
   const response = await api.post<Project>(`/projects/${encodeURIComponent(projectId)}/open`);
+  // Set header for all subsequent requests
+  setCurrentProjectId(projectId);
   return response.data;
 }
 
 export async function closeProject(): Promise<void> {
+  // Clear header before closing
+  setCurrentProjectId(null);
   await api.post('/projects/close');
 }
 
@@ -81,9 +97,7 @@ export async function markImageDone(filename: string, done: boolean = true): Pro
 }
 
 export async function getImageDoneStatus(filename: string): Promise<boolean> {
-  const response = await api.get<{ done: boolean }>(
-    `/images/${encodeURIComponent(filename)}/done`
-  );
+  const response = await api.get<{ done: boolean }>(`/images/${encodeURIComponent(filename)}/done`);
   return response.data.done;
 }
 

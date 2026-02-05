@@ -2,19 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Text } from 'react-konva';
 import type Konva from 'konva';
 import type { Annotation, BoundingBox, DrawingRect, ToolMode } from '@/types';
-
-/** Color palette for different labels */
-const LABEL_COLORS: Record<string, string> = {
-  product: '#22c55e',
-  price: '#3b82f6',
-  brand: '#f59e0b',
-  promo: '#ef4444',
-  default: '#8b5cf6',
-};
-
-function getLabelColor(label: string): string {
-  return LABEL_COLORS[label.toLowerCase()] ?? LABEL_COLORS['default'] ?? '#8b5cf6';
-}
+import { getLabelColor } from '@/lib/constants';
 
 /** Edge pan threshold in pixels (distance from edge to trigger auto-pan) */
 const EDGE_PAN_THRESHOLD = 50;

@@ -1,23 +1,11 @@
 import type { Annotation } from '@/types';
+import { getLabelColor } from '@/lib/constants';
 
 interface AnnotationListProps {
   annotations: Annotation[];
   selectedId: string | null;
   onSelectAnnotation: (id: string) => void;
   onDeleteAnnotation: (id: string) => void;
-}
-
-/** Color palette for labels (same as canvas) */
-const LABEL_COLORS: Record<string, string> = {
-  product: '#22c55e',
-  price: '#3b82f6',
-  brand: '#f59e0b',
-  promo: '#ef4444',
-  default: '#8b5cf6',
-};
-
-function getLabelColor(label: string): string {
-  return LABEL_COLORS[label.toLowerCase()] ?? LABEL_COLORS['default'] ?? '#8b5cf6';
 }
 
 /**

@@ -5,3 +5,5 @@ export { Toolbar } from './Toolbar';
 export { ProjectManager } from './ProjectManager';
 export { LabelManager } from './LabelManager';
 export { ExportDialog } from './ExportDialog';
+export { ToastContainer, useToast } from './Toast';
+export { ConfirmDialog } from './ConfirmDialog';

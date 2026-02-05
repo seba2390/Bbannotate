@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { LabelManager } from '@/components/ui/LabelManager';
@@ -34,7 +34,9 @@ describe('LabelManager', () => {
     await user.type(input, 'new-label');
     await user.click(screen.getByRole('button', { name: /^add$/i }));
 
-    expect(screen.getByText('new-label')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('new-label')).toBeInTheDocument();
+    });
   });
 
   it('should add label on Enter key', async () => {
@@ -44,7 +46,9 @@ describe('LabelManager', () => {
     const input = screen.getByPlaceholderText(/new label name/i);
     await user.type(input, 'enter-label{Enter}');
 
-    expect(screen.getByText('enter-label')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('enter-label')).toBeInTheDocument();
+    });
   });
 
   it('should show error for empty label', async () => {
@@ -53,7 +57,9 @@ describe('LabelManager', () => {
 
     await user.click(screen.getByRole('button', { name: /^add$/i }));
 
-    expect(screen.getByText(/label cannot be empty/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/label cannot be empty/i)).toBeInTheDocument();
+    });
   });
 
   it('should show error for duplicate label', async () => {
@@ -64,7 +70,9 @@ describe('LabelManager', () => {
     await user.type(input, 'product');
     await user.click(screen.getByRole('button', { name: /^add$/i }));
 
-    expect(screen.getByText(/label already exists/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/label already exists/i)).toBeInTheDocument();
+    });
   });
 
   it('should convert labels to lowercase', async () => {
@@ -75,7 +83,9 @@ describe('LabelManager', () => {
     await user.type(input, 'UPPERCASE');
     await user.click(screen.getByRole('button', { name: /^add$/i }));
 
-    expect(screen.getByText('uppercase')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('uppercase')).toBeInTheDocument();
+    });
   });
 
   it('should call onLabelsChange and onClose on save', async () => {
@@ -89,11 +99,18 @@ describe('LabelManager', () => {
     await user.type(input, 'new');
     await user.click(screen.getByRole('button', { name: /^add$/i }));
 
+    // Wait for state to settle before clicking save
+    await waitFor(() => {
+      expect(screen.getByText('new')).toBeInTheDocument();
+    });
+
     // Click save
     await user.click(screen.getByRole('button', { name: /save/i }));
 
-    expect(onLabelsChange).toHaveBeenCalledWith(['product', 'price', 'discount', 'new']);
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(onLabelsChange).toHaveBeenCalledWith(['product', 'price', 'discount', 'new']);
+      expect(onClose).toHaveBeenCalled();
+    });
   });
 
   it('should call onClose when close button clicked', async () => {
@@ -106,7 +123,9 @@ describe('LabelManager', () => {
     const closeButton = closeButtons[0]; // First button is the close X
     await user.click(closeButton!);
 
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalled();
+    });
   });
 
   it('should show error when trying to remove last label', async () => {
@@ -117,6 +136,8 @@ describe('LabelManager', () => {
     const removeButtons = screen.getAllByTitle('Remove label');
     await user.click(removeButtons[0]!);
 
-    expect(screen.getByText(/must have at least one label/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/must have at least one label/i)).toBeInTheDocument();
+    });
   });
 });

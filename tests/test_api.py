@@ -28,10 +28,6 @@ def temp_data_dir(monkeypatch: pytest.MonkeyPatch) -> Path:
         # Use environment variables for path configuration
         monkeypatch.setenv("BBANNOTATE_DATA_DIR", str(data_dir))
         monkeypatch.setenv("BBANNOTATE_PROJECTS_DIR", str(projects_dir))
-        # Reset global project state
-        from src.api import routes
-
-        monkeypatch.setattr(routes, "_current_project_id", None)
         yield data_dir
 
 

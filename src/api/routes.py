@@ -4,8 +4,19 @@ import os
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.models.annotations import (
     Annotation,
@@ -19,6 +30,11 @@ from src.services.export_service import ExportService
 from src.services.project_service import Project, ProjectCreate, ProjectService
 
 router = APIRouter()
+
+# Rate limiter for upload protection
+# Default: 30 uploads per minute per IP (configurable via env)
+_upload_rate_limit = os.environ.get("BBANNOTATE_UPLOAD_RATE_LIMIT", "30/minute")
+limiter = Limiter(key_func=get_remote_address)
 
 
 def get_projects_dir() -> Path:
@@ -41,21 +57,37 @@ def get_data_dir() -> Path:
 PROJECTS_DIR = get_projects_dir()
 DATA_DIR = get_data_dir()  # Legacy fallback
 
-# Global state for current project
-_current_project_id: str | None = None
-
 
 def get_project_service() -> ProjectService:
     """Dependency for project service."""
     return ProjectService(get_projects_dir())
 
 
-def get_annotation_service() -> AnnotationService:
-    """Dependency for annotation service - uses current project's data directory."""
-    global _current_project_id
-    if _current_project_id:
+def get_project_id_from_header(
+    x_project_id: Annotated[str | None, Header()] = None,
+) -> str | None:
+    """Extract project ID from X-Project-Id header.
+
+    This replaces the previous global state approach, making the API
+    thread-safe and suitable for multi-user deployments.
+    """
+    return x_project_id
+
+
+def get_annotation_service(
+    project_id: Annotated[str | None, Depends(get_project_id_from_header)],
+) -> AnnotationService:
+    """Dependency for annotation service - uses project from request header.
+
+    Args:
+        project_id: Project ID from X-Project-Id header.
+
+    Returns:
+        AnnotationService configured for the specified project.
+    """
+    if project_id:
         project_service = ProjectService(get_projects_dir())
-        data_dir = project_service.get_project_data_dir(_current_project_id)
+        data_dir = project_service.get_project_data_dir(project_id)
         if data_dir:
             return AnnotationService(data_dir)
     # Fallback to legacy data directory
@@ -97,12 +129,12 @@ def create_project(
 @router.get("/projects/current", response_model=Project | None)
 def get_current_project(
     service: Annotated[ProjectService, Depends(get_project_service)],
+    project_id: Annotated[str | None, Depends(get_project_id_from_header)],
 ) -> Project | None:
-    """Get the currently active project."""
-    global _current_project_id
-    if not _current_project_id:
+    """Get the currently active project from X-Project-Id header."""
+    if not project_id:
         return None
-    return service.get_project(_current_project_id)
+    return service.get_project(project_id)
 
 
 @router.post("/projects/{project_id}/open", response_model=Project)
@@ -110,20 +142,24 @@ def open_project(
     project_id: str,
     service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
-    """Open a project (set as current and update last_opened)."""
-    global _current_project_id
+    """Open a project and update last_opened timestamp.
+
+    The client should store the returned project ID and include it
+    in subsequent requests via the X-Project-Id header.
+    """
     project = service.open_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    _current_project_id = project_id
     return project
 
 
 @router.post("/projects/close")
 def close_project() -> dict[str, bool]:
-    """Close the current project."""
-    global _current_project_id
-    _current_project_id = None
+    """Close the current project.
+
+    This is now a no-op on the server side since project context
+    is managed per-request via headers. Kept for API compatibility.
+    """
     return {"success": True}
 
 
@@ -133,12 +169,9 @@ def delete_project(
     service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> dict[str, bool]:
     """Delete a project and all its data."""
-    global _current_project_id
     success = service.delete_project(project_id)
     if not success:
         raise HTTPException(status_code=404, detail="Project not found")
-    if _current_project_id == project_id:
-        _current_project_id = None
     return {"success": True}
 
 
@@ -161,11 +194,16 @@ def list_images(
 
 
 @router.post("/images", response_model=ImageInfo)
+@limiter.limit(_upload_rate_limit)
 async def upload_image(
+    request: Request,
     file: Annotated[UploadFile, File(...)],
     service: Annotated[AnnotationService, Depends(get_annotation_service)],
 ) -> ImageInfo:
-    """Upload a new image."""
+    """Upload a new image.
+
+    Rate limited to prevent abuse (default: 30/minute per IP).
+    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 

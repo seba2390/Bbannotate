@@ -8,9 +8,18 @@ import {
   ProjectManager,
   LabelManager,
   ExportDialog,
+  ToastContainer,
+  useToast,
+  ConfirmDialog,
 } from '@/components';
 import { useAnnotations, useImages } from '@/hooks';
-import { getImageUrl, getProjectInfo, closeProject, markImageDone, getAllDoneStatus } from '@/lib/api';
+import {
+  getImageUrl,
+  getProjectInfo,
+  closeProject,
+  markImageDone,
+  getAllDoneStatus,
+} from '@/lib/api';
 import type { ToolMode, DrawingRect, BoundingBox, Project } from '@/types';
 
 /** Default labels for grocery flyer annotation */
@@ -66,6 +75,14 @@ function App(): JSX.Element {
   });
   const [doneCount, setDoneCount] = useState(0);
   const [doneStatus, setDoneStatus] = useState<Record<string, boolean>>({});
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    destructive?: boolean;
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+  const { toasts, addToast, removeToast } = useToast();
 
   const {
     images,
@@ -109,6 +126,18 @@ function App(): JSX.Element {
     setCurrentProject(null);
     setDoneStatus({});
     setDoneCount(0);
+  }, []);
+
+  // Helper to show confirm dialog
+  const showConfirm = useCallback(
+    (title: string, message: string, onConfirm: () => void, destructive = false) => {
+      setConfirmDialog({ isOpen: true, title, message, onConfirm, destructive });
+    },
+    []
+  );
+
+  const closeConfirm = useCallback(() => {
+    setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
   }, []);
 
   // Load annotations when image changes
@@ -254,10 +283,16 @@ function App(): JSX.Element {
 
   const handleClearAnnotations = useCallback(() => {
     if (!currentImage) return;
-    if (confirm('Clear all annotations for this image?')) {
-      clearAnnotations(currentImage);
-    }
-  }, [currentImage, clearAnnotations]);
+    showConfirm(
+      'Clear Annotations',
+      'Clear all annotations for this image?',
+      () => {
+        clearAnnotations(currentImage);
+        closeConfirm();
+      },
+      true
+    );
+  }, [currentImage, clearAnnotations, showConfirm, closeConfirm]);
 
   const handleExport = useCallback((): void => {
     setShowExportDialog(true);
@@ -276,19 +311,22 @@ function App(): JSX.Element {
         setDoneStatus((prev) => ({ ...prev, [currentImage]: false }));
         setDoneCount((prev) => Math.max(0, prev - 1));
       } catch {
-        // Ignore errors
+        addToast('Failed to update image status', 'error');
       }
       return;
     }
 
     // If no annotations, ask if user wants to remove the image
     if (annotations.length === 0) {
-      const shouldRemove = confirm(
-        `This image has no annotations.\n\nDo you want to remove it from the project?`
+      showConfirm(
+        'No Annotations',
+        'This image has no annotations.\n\nDo you want to remove it from the project?',
+        () => {
+          deleteImage(currentImage);
+          closeConfirm();
+        },
+        true
       );
-      if (shouldRemove) {
-        deleteImage(currentImage);
-      }
       return;
     }
 
@@ -300,9 +338,18 @@ function App(): JSX.Element {
       // Go to next image
       nextImage();
     } catch {
-      // Ignore errors
+      addToast('Failed to mark image as done', 'error');
     }
-  }, [currentImage, annotations, doneStatus, deleteImage, nextImage]);
+  }, [
+    currentImage,
+    annotations,
+    doneStatus,
+    deleteImage,
+    nextImage,
+    showConfirm,
+    closeConfirm,
+    addToast,
+  ]);
 
   // Handle label updates from LabelManager
   const handleLabelsChange = useCallback(
@@ -319,11 +366,17 @@ function App(): JSX.Element {
 
   const handleDeleteImage = useCallback(
     (filename: string) => {
-      if (confirm(`Delete "${filename}" and all its annotations?`)) {
-        deleteImage(filename);
-      }
+      showConfirm(
+        'Delete Image',
+        `Delete "${filename}" and all its annotations?`,
+        () => {
+          deleteImage(filename);
+          closeConfirm();
+        },
+        true
+      );
     },
-    [deleteImage]
+    [deleteImage, showConfirm, closeConfirm]
   );
 
   const loading = imagesLoading || annotationsLoading;
@@ -507,6 +560,20 @@ function App(): JSX.Element {
           <span>{currentImage && `${currentImage}`}</span>
         </div>
       </footer>
+
+      {/* Toast notifications */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      {/* Confirm dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={closeConfirm}
+        destructive={confirmDialog.destructive}
+        confirmText={confirmDialog.destructive ? 'Delete' : 'Confirm'}
+      />
     </div>
   );
 }

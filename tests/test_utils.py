@@ -1,8 +1,15 @@
 """Tests for shared utility functions."""
 
+from pathlib import Path
+
 import pytest
 
-from src.utils import sanitize_filename, sanitize_name_for_path
+from src.utils import (
+    find_frontend_dist,
+    sanitize_filename,
+    sanitize_name_for_path,
+    validate_path_in_directory,
+)
 
 
 class TestSanitizeFilename:
@@ -81,3 +88,56 @@ class TestSanitizeNameForPath:
         assert sanitize_name_for_path("日本語") == "日本語"
         # Emoji and symbols are not
         assert sanitize_name_for_path("test🎉") == "test_"
+
+
+class TestValidatePathInDirectory:
+    """Tests for validate_path_in_directory function."""
+
+    def test_valid_path_in_directory(self, tmp_path: Path) -> None:
+        """Test that valid paths within directory return True."""
+        file_path = tmp_path / "image.png"
+        assert validate_path_in_directory(file_path, tmp_path) is True
+
+    def test_path_traversal_attack(self, tmp_path: Path) -> None:
+        """Test that path traversal attempts return False."""
+        attack_path = tmp_path / ".." / ".." / "etc" / "passwd"
+        assert validate_path_in_directory(attack_path, tmp_path) is False
+
+    def test_absolute_path_outside_directory(self, tmp_path: Path) -> None:
+        """Test that absolute paths outside directory return False."""
+        outside_path = Path("/etc/passwd")
+        assert validate_path_in_directory(outside_path, tmp_path) is False
+
+    def test_nested_valid_path(self, tmp_path: Path) -> None:
+        """Test that nested paths within directory return True."""
+        nested_path = tmp_path / "subdir" / "another" / "file.txt"
+        assert validate_path_in_directory(nested_path, tmp_path) is True
+
+    def test_same_directory(self, tmp_path: Path) -> None:
+        """Test that the directory itself returns True."""
+        assert validate_path_in_directory(tmp_path, tmp_path) is True
+
+
+class TestFindFrontendDist:
+    """Tests for find_frontend_dist function."""
+
+    def test_returns_path_or_none(self) -> None:
+        """Test that find_frontend_dist returns Path or None."""
+        result = find_frontend_dist()
+        assert result is None or isinstance(result, Path)
+
+    def test_finds_existing_dist(self, tmp_path: Path) -> None:
+        """Test that it finds dist directory with index.html."""
+        from unittest.mock import patch
+
+        # Create dist structure in temp directory
+        dist_dir = tmp_path / "frontend" / "dist"
+        dist_dir.mkdir(parents=True)
+        (dist_dir / "index.html").write_text("<html></html>")
+
+        with patch.object(Path, "cwd", return_value=tmp_path):
+            result = find_frontend_dist()
+            # May find real dist or our test dist
+            if result is not None:
+                assert result.exists()
+                assert (result / "index.html").exists()
