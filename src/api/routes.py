@@ -33,8 +33,9 @@ from src.utils import validate_path_in_directory
 router = APIRouter()
 
 # Rate limiter for upload protection
-# Default: 30 uploads per minute per IP (configurable via env)
-_upload_rate_limit = os.environ.get("BBANNOTATE_UPLOAD_RATE_LIMIT", "30/minute")
+# Default: 1000 uploads per minute per IP (configurable via env)
+# Set high to support bulk imports of large image datasets
+_upload_rate_limit = os.environ.get("BBANNOTATE_UPLOAD_RATE_LIMIT", "1000/minute")
 limiter = Limiter(key_func=get_remote_address)
 
 
@@ -213,7 +214,7 @@ async def upload_image(
 ) -> ImageInfo:
     """Upload a new image.
 
-    Rate limited to prevent abuse (default: 30/minute per IP).
+    Rate limited to prevent abuse (default: 1000/minute per IP).
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
@@ -380,15 +381,42 @@ def copy_annotations(
     return {"copied": count}
 
 
+def _get_export_service_with_project(
+    project_id: str | None,
+    header_project_id: str | None,
+) -> ExportService:
+    """Get export service using project_id query param or header fallback.
+
+    Args:
+        project_id: Project ID from query parameter.
+        header_project_id: Project ID from X-Project-Id header.
+
+    Returns:
+        ExportService configured for the resolved project.
+    """
+    effective_project_id = project_id or header_project_id
+    if effective_project_id:
+        projects_dir = get_projects_dir()
+        project_service = ProjectService(projects_dir)
+        data_dir = project_service.get_project_data_dir(effective_project_id)
+        if data_dir and validate_path_in_directory(data_dir, projects_dir):
+            annotation_service = AnnotationService(data_dir)
+            return ExportService(annotation_service)
+    # Fallback to legacy data directory
+    return ExportService(AnnotationService(get_data_dir()))
+
+
 # Export endpoints
 @router.post("/export/yolo")
 def export_yolo(
-    export_service: Annotated[ExportService, Depends(get_export_service)],
+    header_project_id: Annotated[str | None, Depends(get_project_id_from_header)],
+    project_id: Annotated[str | None, Query()] = None,
     train_split: Annotated[float, Query(ge=0.1, le=0.98)] = 0.7,
     val_split: Annotated[float, Query(ge=0.01, le=0.5)] = 0.2,
     test_split: Annotated[float, Query(ge=0.0, le=0.5)] = 0.1,
 ) -> FileResponse:
     """Export annotations in YOLO format as a ZIP file."""
+    export_service = _get_export_service_with_project(project_id, header_project_id)
     # Validate splits sum to at most 1.0
     total_split = train_split + val_split + test_split
     if total_split > 1.0:
@@ -406,11 +434,12 @@ def export_yolo(
 
 @router.post("/export/coco")
 def export_coco(
-    export_service: Annotated[ExportService, Depends(get_export_service)],
-    annotation_service: Annotated[AnnotationService, Depends(get_annotation_service)],
+    header_project_id: Annotated[str | None, Depends(get_project_id_from_header)],
+    project_id: Annotated[str | None, Query()] = None,
 ) -> FileResponse:
     """Export annotations in COCO JSON format."""
-    output_path = annotation_service.data_dir / "coco_annotations.json"
+    export_service = _get_export_service_with_project(project_id, header_project_id)
+    output_path = export_service.annotation_service.data_dir / "coco_annotations.json"
     export_service.export_coco(output_path)
     return FileResponse(
         output_path,
@@ -421,9 +450,11 @@ def export_coco(
 
 @router.post("/export/pascal-voc")
 def export_pascal_voc(
-    export_service: Annotated[ExportService, Depends(get_export_service)],
+    header_project_id: Annotated[str | None, Depends(get_project_id_from_header)],
+    project_id: Annotated[str | None, Query()] = None,
 ) -> FileResponse:
     """Export annotations in Pascal VOC XML format as a ZIP file."""
+    export_service = _get_export_service_with_project(project_id, header_project_id)
     zip_path = export_service.export_pascal_voc_zip()
     return FileResponse(
         zip_path,
@@ -434,11 +465,13 @@ def export_pascal_voc(
 
 @router.post("/export/createml")
 def export_createml(
-    export_service: Annotated[ExportService, Depends(get_export_service)],
-    annotation_service: Annotated[AnnotationService, Depends(get_annotation_service)],
+    header_project_id: Annotated[str | None, Depends(get_project_id_from_header)],
+    project_id: Annotated[str | None, Query()] = None,
 ) -> FileResponse:
     """Export annotations in Apple CreateML JSON format."""
-    output_path = annotation_service.data_dir / "createml_annotations.json"
+    export_service = _get_export_service_with_project(project_id, header_project_id)
+    data_dir = export_service.annotation_service.data_dir
+    output_path = data_dir / "createml_annotations.json"
     export_service.export_createml(output_path)
     return FileResponse(
         output_path,
@@ -449,11 +482,12 @@ def export_createml(
 
 @router.post("/export/csv")
 def export_csv(
-    export_service: Annotated[ExportService, Depends(get_export_service)],
-    annotation_service: Annotated[AnnotationService, Depends(get_annotation_service)],
+    header_project_id: Annotated[str | None, Depends(get_project_id_from_header)],
+    project_id: Annotated[str | None, Query()] = None,
 ) -> FileResponse:
     """Export annotations in CSV format."""
-    output_path = annotation_service.data_dir / "annotations.csv"
+    export_service = _get_export_service_with_project(project_id, header_project_id)
+    output_path = export_service.annotation_service.data_dir / "annotations.csv"
     export_service.export_csv(output_path)
     return FileResponse(
         output_path,

@@ -8,11 +8,18 @@ import type {
 } from '@/types';
 import * as api from '@/lib/api';
 
+/** Represents an annotation that can be undone */
+interface UndoableAnnotation {
+  filename: string;
+  annotationId: string;
+}
+
 interface UseAnnotationsResult {
   annotations: Annotation[];
   selectedId: string | null;
   loading: boolean;
   error: string | null;
+  canUndo: boolean;
   loadAnnotations: (filename: string) => Promise<void>;
   addAnnotation: (
     filename: string,
@@ -31,6 +38,7 @@ interface UseAnnotationsResult {
   clearAnnotations: (filename: string) => Promise<void>;
   selectAnnotation: (id: string | null) => void;
   updateLocalBbox: (annotationId: string, bbox: BoundingBox) => void;
+  undoLastAnnotation: () => Promise<void>;
 }
 
 /**
@@ -41,6 +49,7 @@ export function useAnnotations(): UseAnnotationsResult {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [undoStack, setUndoStack] = useState<UndoableAnnotation[]>([]);
 
   const loadAnnotations = useCallback(async (filename: string) => {
     setLoading(true);
@@ -84,6 +93,8 @@ export function useAnnotations(): UseAnnotationsResult {
         const newAnnotation = await api.addAnnotation(filename, create);
         setAnnotations((prev) => [...prev, newAnnotation]);
         setSelectedId(newAnnotation.id);
+        // Add to undo stack
+        setUndoStack((prev) => [...prev, { filename, annotationId: newAnnotation.id }]);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add annotation');
       }
@@ -108,6 +119,8 @@ export function useAnnotations(): UseAnnotationsResult {
       await api.deleteAnnotation(filename, annotationId);
       setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
       setSelectedId((prev) => (prev === annotationId ? null : prev));
+      // Remove from undo stack if present
+      setUndoStack((prev) => prev.filter((u) => u.annotationId !== annotationId));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete annotation');
     }
@@ -118,6 +131,8 @@ export function useAnnotations(): UseAnnotationsResult {
       await api.clearAnnotations(filename);
       setAnnotations([]);
       setSelectedId(null);
+      // Clear undo stack for this file
+      setUndoStack((prev) => prev.filter((u) => u.filename !== filename));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to clear annotations');
     }
@@ -131,11 +146,28 @@ export function useAnnotations(): UseAnnotationsResult {
     setAnnotations((prev) => prev.map((a) => (a.id === annotationId ? { ...a, bbox } : a)));
   }, []);
 
+  const undoLastAnnotation = useCallback(async () => {
+    if (undoStack.length === 0) return;
+
+    const lastAction = undoStack[undoStack.length - 1];
+    if (!lastAction) return;
+
+    try {
+      await api.deleteAnnotation(lastAction.filename, lastAction.annotationId);
+      setAnnotations((prev) => prev.filter((a) => a.id !== lastAction.annotationId));
+      setSelectedId((prev) => (prev === lastAction.annotationId ? null : prev));
+      setUndoStack((prev) => prev.slice(0, -1));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to undo annotation');
+    }
+  }, [undoStack]);
+
   return {
     annotations,
     selectedId,
     loading,
     error,
+    canUndo: undoStack.length > 0,
     loadAnnotations,
     addAnnotation,
     updateAnnotation,
@@ -143,5 +175,6 @@ export function useAnnotations(): UseAnnotationsResult {
     clearAnnotations,
     selectAnnotation,
     updateLocalBbox,
+    undoLastAnnotation,
   };
 }

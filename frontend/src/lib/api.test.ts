@@ -138,29 +138,79 @@ describe('API Client', () => {
 
   describe('Export', () => {
     it('should generate correct YOLO export URL', () => {
+      api.setCurrentProjectId(null);
       const url = api.getExportUrl('yolo');
       expect(url).toBe('/api/export/yolo?train_split=0.7&val_split=0.2&test_split=0.1');
     });
 
     it('should generate correct YOLO export URL with custom split', () => {
+      api.setCurrentProjectId(null);
       const url = api.getExportUrl('yolo', { train: 0.8, val: 0.1, test: 0.1 });
       expect(url).toBe('/api/export/yolo?train_split=0.8&val_split=0.1&test_split=0.1');
     });
 
     it('should generate correct COCO export URL', () => {
+      api.setCurrentProjectId(null);
       expect(api.getExportUrl('coco')).toBe('/api/export/coco');
     });
 
     it('should generate correct Pascal VOC export URL', () => {
+      api.setCurrentProjectId(null);
       expect(api.getExportUrl('pascal-voc')).toBe('/api/export/pascal-voc');
     });
 
     it('should generate correct CreateML export URL', () => {
+      api.setCurrentProjectId(null);
       expect(api.getExportUrl('createml')).toBe('/api/export/createml');
     });
 
     it('should generate correct CSV export URL', () => {
+      api.setCurrentProjectId(null);
       expect(api.getExportUrl('csv')).toBe('/api/export/csv');
+    });
+
+    it('should include project_id in YOLO export URL when project is set', () => {
+      api.setCurrentProjectId('my-project');
+      const url = api.getExportUrl('yolo');
+      expect(url).toBe(
+        '/api/export/yolo?train_split=0.7&val_split=0.2&test_split=0.1&project_id=my-project'
+      );
+      api.setCurrentProjectId(null);
+    });
+
+    it('should include project_id in COCO export URL when project is set', () => {
+      api.setCurrentProjectId('my-project');
+      const url = api.getExportUrl('coco');
+      expect(url).toBe('/api/export/coco?project_id=my-project');
+      api.setCurrentProjectId(null);
+    });
+
+    it('should include project_id in Pascal VOC export URL when project is set', () => {
+      api.setCurrentProjectId('my-project');
+      const url = api.getExportUrl('pascal-voc');
+      expect(url).toBe('/api/export/pascal-voc?project_id=my-project');
+      api.setCurrentProjectId(null);
+    });
+
+    it('should include project_id in CreateML export URL when project is set', () => {
+      api.setCurrentProjectId('my-project');
+      const url = api.getExportUrl('createml');
+      expect(url).toBe('/api/export/createml?project_id=my-project');
+      api.setCurrentProjectId(null);
+    });
+
+    it('should include project_id in CSV export URL when project is set', () => {
+      api.setCurrentProjectId('my-project');
+      const url = api.getExportUrl('csv');
+      expect(url).toBe('/api/export/csv?project_id=my-project');
+      api.setCurrentProjectId(null);
+    });
+
+    it('should URL-encode project_id with special characters', () => {
+      api.setCurrentProjectId('my project/test');
+      const url = api.getExportUrl('yolo');
+      expect(url).toContain('project_id=my%20project%2Ftest');
+      api.setCurrentProjectId(null);
     });
 
     it('should have all export formats defined', () => {

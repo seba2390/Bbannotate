@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-02-05
+
+### Added
+
+- Undo functionality (`⌘Z` / `Ctrl+Z`) to undo the last drawn bounding box
+- Image count display in sidebar title (matches Labels and Annotations count display)
+- Project-scoped labels: each project now maintains its own independent set of labels
+
+### Changed
+
+- Improved edge pan behavior: threshold reduced from 50px to 15px (triggers only at actual edge)
+- Smoother pan speed: reduced from 15px/frame to 4px/frame for better control
+- Delta-proportional zoom for trackpad pinch-to-zoom (much smoother control)
+- Increased upload rate limit from 30/minute to 1000/minute for bulk image imports
+- Improved status bar styling with grouped shortcuts and better spacing
+- Added `BBANNOTATE_UPLOAD_RATE_LIMIT` environment variable documentation to README
+
+### Fixed
+
+- Fixed premature bounding box release when dragging near canvas edge (removed onMouseLeave handler, uses window-level mouseup instead)
+- Fixed labels being shared across projects (now stored per-project in localStorage)
+
 ## [1.0.4] - 2026-02-05
 
 ### Fixed

@@ -5,9 +5,9 @@ import type { Annotation, BoundingBox, DrawingRect, ToolMode } from '@/types';
 import { getLabelColor } from '@/lib/constants';
 
 /** Edge pan threshold in pixels (distance from edge to trigger auto-pan) */
-const EDGE_PAN_THRESHOLD = 50;
+const EDGE_PAN_THRESHOLD = 15;
 /** Auto-pan speed in pixels per frame */
-const EDGE_PAN_SPEED = 15;
+const EDGE_PAN_SPEED = 4;
 
 interface AnnotationCanvasProps {
   imageUrl: string | null;
@@ -135,7 +135,10 @@ export function AnnotationCanvas({
       const stage = stageRef.current;
       if (!stage) return;
 
-      const scaleBy = 1.1;
+      // Use delta-proportional zoom for smooth trackpad pinch-to-zoom
+      // Clamp deltaY to avoid extreme zoom jumps from fast scroll wheels
+      const deltaY = Math.abs(e.evt.deltaY);
+      const scaleBy = 1 + Math.min(deltaY, 100) * 0.002;
       const oldZoom = zoom;
       const pointer = stage.getPointerPosition();
 
@@ -390,7 +393,7 @@ export function AnnotationCanvas({
     startAutoPanIfNeeded(screenPos);
   };
 
-  const handleMouseUp = (): void => {
+  const handleMouseUp = useCallback((): void => {
     // Stop any auto-pan in progress
     stopAutoPan();
     lastMousePosRef.current = null;
@@ -423,7 +426,15 @@ export function AnnotationCanvas({
 
     setIsDrawing(false);
     setDrawingRect(null);
-  };
+  }, [isPanning, isDrawing, drawingRect, image, stopAutoPan, onAddAnnotation]);
+
+  // Listen for mouseup on window to catch releases outside the canvas
+  useEffect(() => {
+    if (isDrawing || isPanning) {
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => window.removeEventListener('mouseup', handleMouseUp);
+    }
+  }, [isDrawing, isPanning, handleMouseUp]);
 
   const handleRectClick = (e: Konva.KonvaEventObject<MouseEvent | Event>, id: string): void => {
     if (toolMode === 'select') {
@@ -648,7 +659,6 @@ export function AnnotationCanvas({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
         onClick={handleStageClick}
         style={{ cursor: getCursor() }}

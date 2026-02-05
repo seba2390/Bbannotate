@@ -220,22 +220,26 @@ export function getExportUrl(
   format: ExportFormat,
   split: DataSplit = { train: 0.7, val: 0.2, test: 0.1 }
 ): string {
+  const projectParam = currentProjectId ? `project_id=${encodeURIComponent(currentProjectId)}` : '';
   switch (format) {
     case 'yolo':
-      return `/api/export/yolo?train_split=${split.train}&val_split=${split.val}&test_split=${split.test}`;
+      return `/api/export/yolo?train_split=${split.train}&val_split=${split.val}&test_split=${split.test}${projectParam ? `&${projectParam}` : ''}`;
     case 'coco':
-      return '/api/export/coco';
+      return `/api/export/coco${projectParam ? `?${projectParam}` : ''}`;
     case 'pascal-voc':
-      return '/api/export/pascal-voc';
+      return `/api/export/pascal-voc${projectParam ? `?${projectParam}` : ''}`;
     case 'createml':
-      return '/api/export/createml';
+      return `/api/export/createml${projectParam ? `?${projectParam}` : ''}`;
     case 'csv':
-      return '/api/export/csv';
+      return `/api/export/csv${projectParam ? `?${projectParam}` : ''}`;
   }
 }
 
 export function getYoloExportUrl(split: DataSplit = { train: 0.7, val: 0.2, test: 0.1 }): string {
-  return `/api/export/yolo?train_split=${split.train}&val_split=${split.val}&test_split=${split.test}`;
+  const projectParam = currentProjectId
+    ? `&project_id=${encodeURIComponent(currentProjectId)}`
+    : '';
+  return `/api/export/yolo?train_split=${split.train}&val_split=${split.val}&test_split=${split.test}${projectParam}`;
 }
 
 export function getCocoExportUrl(): string {

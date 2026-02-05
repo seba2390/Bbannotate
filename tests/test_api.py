@@ -587,6 +587,226 @@ class TestExportEndpoints:
         assert len(data["categories"]) == 1
 
 
+class TestExportWithProjectId:
+    """Tests for export functionality with project_id query parameter."""
+
+    def test_export_yolo_with_project_id(
+        self, client: TestClient, temp_data_dir: Path, sample_image: bytes
+    ) -> None:
+        """Test YOLO export with project_id query parameter."""
+        # Create a project
+        response = client.post("/api/projects", json={"name": "Export Test Project"})
+        assert response.status_code == 200
+        project_id = response.json()["id"]
+
+        # Open the project
+        client.post(f"/api/projects/{project_id}/open")
+
+        # Upload image to project (with header)
+        client.post(
+            "/api/images",
+            files={"file": ("test.png", sample_image, "image/png")},
+            headers={"X-Project-Id": project_id},
+        )
+
+        # Add annotation
+        annotation = {
+            "label": "my_label",
+            "class_id": 0,
+            "bbox": {"x": 0.5, "y": 0.5, "width": 0.2, "height": 0.2},
+        }
+        client.post(
+            "/api/images/test.png/annotations",
+            json=annotation,
+            headers={"X-Project-Id": project_id},
+        )
+
+        # Export with project_id query parameter (simulating form submission)
+        response = client.post(f"/api/export/yolo?project_id={project_id}")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/zip"
+
+        # Verify ZIP contains correct data
+        zip_content = io.BytesIO(response.content)
+        with zipfile.ZipFile(zip_content, "r") as zf:
+            names = zf.namelist()
+            assert "data.yaml" in names
+
+            # Check data.yaml has correct labels
+            yaml_content = zf.read("data.yaml").decode("utf-8")
+            assert "nc: 1" in yaml_content
+            assert "my_label" in yaml_content
+            # Should use relative path
+            assert "path: ." in yaml_content
+
+    def test_export_yolo_without_project_id_uses_legacy(
+        self, client: TestClient, temp_data_dir: Path, sample_image: bytes
+    ) -> None:
+        """Test YOLO export without project_id falls back to legacy directory."""
+        # Upload to legacy directory (no project header)
+        client.post(
+            "/api/images",
+            files={"file": ("legacy.png", sample_image, "image/png")},
+        )
+        annotation = {
+            "label": "legacy_label",
+            "class_id": 0,
+            "bbox": {"x": 0.5, "y": 0.5, "width": 0.2, "height": 0.2},
+        }
+        client.post("/api/images/legacy.png/annotations", json=annotation)
+
+        # Export without project_id
+        response = client.post("/api/export/yolo")
+        assert response.status_code == 200
+
+        zip_content = io.BytesIO(response.content)
+        with zipfile.ZipFile(zip_content, "r") as zf:
+            yaml_content = zf.read("data.yaml").decode("utf-8")
+            assert "legacy_label" in yaml_content
+
+    def test_export_coco_with_project_id(
+        self, client: TestClient, temp_data_dir: Path, sample_image: bytes
+    ) -> None:
+        """Test COCO export with project_id query parameter."""
+        # Create and open project
+        response = client.post("/api/projects", json={"name": "COCO Export Test"})
+        project_id = response.json()["id"]
+        client.post(f"/api/projects/{project_id}/open")
+
+        # Add data to project
+        client.post(
+            "/api/images",
+            files={"file": ("test.png", sample_image, "image/png")},
+            headers={"X-Project-Id": project_id},
+        )
+        annotation = {
+            "label": "coco_label",
+            "class_id": 0,
+            "bbox": {"x": 0.5, "y": 0.5, "width": 0.2, "height": 0.2},
+        }
+        client.post(
+            "/api/images/test.png/annotations",
+            json=annotation,
+            headers={"X-Project-Id": project_id},
+        )
+
+        # Export with project_id query param
+        response = client.post(f"/api/export/coco?project_id={project_id}")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert len(data["images"]) == 1
+        assert len(data["categories"]) == 1
+        assert data["categories"][0]["name"] == "coco_label"
+
+    def test_export_pascal_voc_with_project_id(
+        self, client: TestClient, temp_data_dir: Path, sample_image: bytes
+    ) -> None:
+        """Test Pascal VOC export with project_id query parameter."""
+        # Create and open project
+        response = client.post("/api/projects", json={"name": "VOC Export Test"})
+        project_id = response.json()["id"]
+        client.post(f"/api/projects/{project_id}/open")
+
+        # Add data
+        client.post(
+            "/api/images",
+            files={"file": ("test.png", sample_image, "image/png")},
+            headers={"X-Project-Id": project_id},
+        )
+        annotation = {
+            "label": "voc_label",
+            "class_id": 0,
+            "bbox": {"x": 0.5, "y": 0.5, "width": 0.2, "height": 0.2},
+        }
+        client.post(
+            "/api/images/test.png/annotations",
+            json=annotation,
+            headers={"X-Project-Id": project_id},
+        )
+
+        # Export
+        response = client.post(f"/api/export/pascal-voc?project_id={project_id}")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/zip"
+
+        zip_content = io.BytesIO(response.content)
+        with zipfile.ZipFile(zip_content, "r") as zf:
+            names = zf.namelist()
+            assert any("Annotations" in n for n in names)
+            assert any("JPEGImages" in n for n in names)
+
+    def test_export_createml_with_project_id(
+        self, client: TestClient, temp_data_dir: Path, sample_image: bytes
+    ) -> None:
+        """Test CreateML export with project_id query parameter."""
+        # Create and open project
+        response = client.post("/api/projects", json={"name": "CreateML Export Test"})
+        project_id = response.json()["id"]
+        client.post(f"/api/projects/{project_id}/open")
+
+        # Add data
+        client.post(
+            "/api/images",
+            files={"file": ("test.png", sample_image, "image/png")},
+            headers={"X-Project-Id": project_id},
+        )
+        annotation = {
+            "label": "createml_label",
+            "class_id": 0,
+            "bbox": {"x": 0.5, "y": 0.5, "width": 0.2, "height": 0.2},
+        }
+        client.post(
+            "/api/images/test.png/annotations",
+            json=annotation,
+            headers={"X-Project-Id": project_id},
+        )
+
+        # Export
+        response = client.post(f"/api/export/createml?project_id={project_id}")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["image"] == "test.png"
+        assert data[0]["annotations"][0]["label"] == "createml_label"
+
+    def test_export_csv_with_project_id(
+        self, client: TestClient, temp_data_dir: Path, sample_image: bytes
+    ) -> None:
+        """Test CSV export with project_id query parameter."""
+        # Create and open project
+        response = client.post("/api/projects", json={"name": "CSV Export Test"})
+        project_id = response.json()["id"]
+        client.post(f"/api/projects/{project_id}/open")
+
+        # Add data
+        client.post(
+            "/api/images",
+            files={"file": ("test.png", sample_image, "image/png")},
+            headers={"X-Project-Id": project_id},
+        )
+        annotation = {
+            "label": "csv_label",
+            "class_id": 0,
+            "bbox": {"x": 0.5, "y": 0.5, "width": 0.2, "height": 0.2},
+        }
+        client.post(
+            "/api/images/test.png/annotations",
+            json=annotation,
+            headers={"X-Project-Id": project_id},
+        )
+
+        # Export
+        response = client.post(f"/api/export/csv?project_id={project_id}")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/csv; charset=utf-8"
+
+        content = response.content.decode("utf-8")
+        assert "csv_label" in content
+        assert "test.png" in content
+
+
 class TestSpecialCharactersInFilenames:
     """Tests for handling special characters in filenames."""
 
