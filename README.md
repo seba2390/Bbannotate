@@ -72,6 +72,7 @@ bbannotate build-frontend  # Build frontend assets (development)
 | `←` `→` | Navigate images |
 | `1-9` | Select label by index |
 | `Del` / `Backspace` | Delete annotation |
+| `⌘Z` / `Ctrl+Z` | Undo last annotation |
 | `Esc` | Deselect / Cancel |
 
 ## Export Formats
@@ -92,6 +93,7 @@ bbannotate build-frontend  # Build frontend assets (development)
 |----------|-------------|
 | `BBANNOTATE_DATA_DIR` | Override default data directory |
 | `BBANNOTATE_PROJECTS_DIR` | Override default projects directory |
+| `BBANNOTATE_UPLOAD_RATE_LIMIT` | Upload rate limit (default: `1000/minute`) |
 
 ## Development
 

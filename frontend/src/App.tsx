@@ -25,10 +25,15 @@ import type { ToolMode, DrawingRect, BoundingBox, Project } from '@/types';
 /** Default labels - empty so users define their own */
 const DEFAULT_LABELS: string[] = [];
 
-/** Load labels from localStorage or use defaults */
-function loadLabels(): string[] {
+/** Get the localStorage key for a project's labels */
+function getLabelsKey(projectName: string | null): string {
+  return projectName ? `annotationLabels_${projectName}` : 'annotationLabels';
+}
+
+/** Load labels from localStorage for a specific project */
+function loadLabelsForProject(projectName: string | null): string[] {
   if (typeof window === 'undefined') return DEFAULT_LABELS;
-  const stored = localStorage.getItem('annotationLabels');
+  const stored = localStorage.getItem(getLabelsKey(projectName));
   if (stored) {
     try {
       const parsed = JSON.parse(stored) as unknown;
@@ -46,10 +51,10 @@ function loadLabels(): string[] {
   return DEFAULT_LABELS;
 }
 
-/** Save labels to localStorage */
-function saveLabels(labels: string[]): void {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('annotationLabels', JSON.stringify(labels));
+/** Save labels to localStorage for a specific project */
+function saveLabelsForProject(projectName: string | null, labels: string[]): void {
+  if (typeof window !== 'undefined' && projectName) {
+    localStorage.setItem(getLabelsKey(projectName), JSON.stringify(labels));
   }
 }
 
@@ -59,8 +64,8 @@ function saveLabels(labels: string[]): void {
 function App(): JSX.Element {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>('draw');
-  const [labels, setLabels] = useState<string[]>(loadLabels);
-  const [currentLabel, setCurrentLabel] = useState(labels[0] ?? 'product');
+  const [labels, setLabels] = useState<string[]>(DEFAULT_LABELS);
+  const [currentLabel, setCurrentLabel] = useState<string>('');
   const [showLabelManager, setShowLabelManager] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
@@ -103,6 +108,7 @@ function App(): JSX.Element {
     selectedId,
     loading: annotationsLoading,
     error: annotationsError,
+    canUndo,
     loadAnnotations,
     addAnnotation,
     updateAnnotation,
@@ -110,12 +116,17 @@ function App(): JSX.Element {
     clearAnnotations,
     selectAnnotation,
     updateLocalBbox,
+    undoLastAnnotation,
   } = useAnnotations();
 
   // Handle project open
   const handleOpenProject = useCallback(
     (project: Project): void => {
       setCurrentProject(project);
+      // Load labels for this project
+      const projectLabels = loadLabelsForProject(project.name);
+      setLabels(projectLabels);
+      setCurrentLabel(projectLabels[0] ?? '');
       // Refresh images when project opens
       refreshImages();
     },
@@ -126,6 +137,8 @@ function App(): JSX.Element {
   const handleCloseProject = useCallback(async (): Promise<void> => {
     await closeProject();
     setCurrentProject(null);
+    setLabels(DEFAULT_LABELS);
+    setCurrentLabel('');
     setDoneStatus({});
     setDoneCount(0);
   }, []);
@@ -201,6 +214,13 @@ function App(): JSX.Element {
     selectAnnotation(null);
   }, [selectAnnotation]);
 
+  // Handle undo (exposed for keyboard shortcut)
+  const handleUndo = useCallback((): void => {
+    if (canUndo) {
+      undoLastAnnotation();
+    }
+  }, [canUndo, undoLastAnnotation]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
@@ -214,9 +234,19 @@ function App(): JSX.Element {
       }
 
       switch (e.key) {
+        case 'z':
+        case 'Z':
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            handleUndo();
+          }
+          break;
         case 's':
         case 'S':
-          setToolMode('select');
+          // Don't trigger select mode if Cmd/Ctrl is pressed (e.g., Cmd+S for save)
+          if (!e.metaKey && !e.ctrlKey) {
+            setToolMode('select');
+          }
           break;
         case 'd':
         case 'D':
@@ -259,7 +289,7 @@ function App(): JSX.Element {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [prevImage, nextImage, handleDeleteSelected, handleDeselect, labels, currentLabel]);
+  }, [prevImage, nextImage, handleDeleteSelected, handleDeselect, handleUndo, labels, currentLabel]);
 
   const handleAddAnnotation = useCallback(
     (rect: DrawingRect, imageWidth: number, imageHeight: number) => {
@@ -376,13 +406,13 @@ function App(): JSX.Element {
   const handleLabelsChange = useCallback(
     (newLabels: string[]): void => {
       setLabels(newLabels);
-      saveLabels(newLabels);
+      saveLabelsForProject(currentProject?.name ?? null, newLabels);
       // If current label was removed, switch to first label
       if (!newLabels.includes(currentLabel) && newLabels.length > 0) {
-        setCurrentLabel(newLabels[0] ?? 'product');
+        setCurrentLabel(newLabels[0] ?? '');
       }
     },
-    [currentLabel]
+    [currentLabel, currentProject?.name]
   );
 
   const handleDeleteImage = useCallback(
@@ -508,7 +538,9 @@ function App(): JSX.Element {
         {/* Left sidebar - Images */}
         <aside className="flex w-64 flex-col border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
           <div className="border-b border-gray-200 p-3 dark:border-gray-700">
-            <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">Images</h2>
+            <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Images ({images.length})
+            </h2>
             <ImageUpload onUpload={uploadImages} disabled={loading} />
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -617,20 +649,44 @@ function App(): JSX.Element {
       </div>
 
       {/* Status bar */}
-      <footer className="border-t border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+      <footer className="border-t border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100 px-4 py-2 text-xs dark:border-gray-700 dark:from-gray-800 dark:to-gray-900">
         <div className="flex items-center justify-between">
-          <span>
-            {loading ? 'Loading...' : 'Ready'} |{' '}
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">D</kbd> Draw{' '}
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">S</kbd> Select{' '}
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">Space</kbd> Pan{' '}
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">←</kbd>
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">→</kbd> Navigate{' '}
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">Del</kbd> Delete{' '}
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">Esc</kbd> Deselect{' '}
-            <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">1-9</kbd> Labels
-          </span>
-          <span>{currentImage && `${currentImage}`}</span>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">D</kbd>
+              <span className="text-gray-500 dark:text-gray-400">Draw</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">S</kbd>
+              <span className="text-gray-500 dark:text-gray-400">Select</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">Space</kbd>
+              <span className="text-gray-500 dark:text-gray-400">Pan</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">←</kbd>
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">→</kbd>
+              <span className="ml-0.5 text-gray-500 dark:text-gray-400">Navigate</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">Del</kbd>
+              <span className="text-gray-500 dark:text-gray-400">Delete</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">⌘Z</kbd>
+              <span className="text-gray-500 dark:text-gray-400">Undo</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">Esc</kbd>
+              <span className="text-gray-500 dark:text-gray-400">Deselect</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">1-9</kbd>
+              <span className="text-gray-500 dark:text-gray-400">Labels</span>
+            </div>
+          </div>
+          <span className="font-medium text-gray-600 dark:text-gray-300">{currentImage ?? ''}</span>
         </div>
       </footer>
 

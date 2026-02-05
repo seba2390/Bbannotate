@@ -33,8 +33,9 @@ from src.utils import validate_path_in_directory
 router = APIRouter()
 
 # Rate limiter for upload protection
-# Default: 30 uploads per minute per IP (configurable via env)
-_upload_rate_limit = os.environ.get("BBANNOTATE_UPLOAD_RATE_LIMIT", "30/minute")
+# Default: 1000 uploads per minute per IP (configurable via env)
+# Set high to support bulk imports of large image datasets
+_upload_rate_limit = os.environ.get("BBANNOTATE_UPLOAD_RATE_LIMIT", "1000/minute")
 limiter = Limiter(key_func=get_remote_address)
 
 
@@ -213,7 +214,7 @@ async def upload_image(
 ) -> ImageInfo:
     """Upload a new image.
 
-    Rate limited to prevent abuse (default: 30/minute per IP).
+    Rate limited to prevent abuse (default: 1000/minute per IP).
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
