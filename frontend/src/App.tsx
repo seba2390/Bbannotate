@@ -289,7 +289,15 @@ function App(): JSX.Element {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [prevImage, nextImage, handleDeleteSelected, handleDeselect, handleUndo, labels, currentLabel]);
+  }, [
+    prevImage,
+    nextImage,
+    handleDeleteSelected,
+    handleDeselect,
+    handleUndo,
+    labels,
+    currentLabel,
+  ]);
 
   const handleAddAnnotation = useCallback(
     (rect: DrawingRect, imageWidth: number, imageHeight: number) => {
@@ -653,36 +661,54 @@ function App(): JSX.Element {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-1.5">
-              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">D</kbd>
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                D
+              </kbd>
               <span className="text-gray-500 dark:text-gray-400">Draw</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">S</kbd>
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                S
+              </kbd>
               <span className="text-gray-500 dark:text-gray-400">Select</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">Space</kbd>
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                Space
+              </kbd>
               <span className="text-gray-500 dark:text-gray-400">Pan</span>
             </div>
             <div className="flex items-center gap-1">
-              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">←</kbd>
-              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">→</kbd>
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                ←
+              </kbd>
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                →
+              </kbd>
               <span className="ml-0.5 text-gray-500 dark:text-gray-400">Navigate</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">Del</kbd>
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                Del
+              </kbd>
               <span className="text-gray-500 dark:text-gray-400">Delete</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">⌘Z</kbd>
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                ⌘Z
+              </kbd>
               <span className="text-gray-500 dark:text-gray-400">Undo</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">Esc</kbd>
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                Esc
+              </kbd>
               <span className="text-gray-500 dark:text-gray-400">Deselect</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">1-9</kbd>
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                1-9
+              </kbd>
               <span className="text-gray-500 dark:text-gray-400">Labels</span>
             </div>
           </div>
