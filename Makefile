@@ -187,15 +187,15 @@ wheel: frontend-build
 	@echo "Wheel built in dist/"
 
 # Publish to PyPI (requires twine and PyPI credentials)
-publish:
-	@echo "Publishing to PyPI..."
-	$(VENV_BIN)/pip install twine
-	$(VENV_BIN)/twine upload dist/*
-	@echo "Published to PyPI!"
+#publish:
+#	@echo "Publishing to PyPI..."
+#	$(VENV_BIN)/pip install twine
+#	$(VENV_BIN)/twine upload dist/*
+#	@echo "Published to PyPI!"
 
 # Publish to TestPyPI (for testing)
-publish-test:
-	@echo "Publishing to TestPyPI..."
-	$(VENV_BIN)/pip install twine
-	$(VENV_BIN)/twine upload --repository testpypi dist/*
-	@echo "Published to TestPyPI!"
+#publish-test:
+#	@echo "Publishing to TestPyPI..."
+#	$(VENV_BIN)/pip install twine
+#	$(VENV_BIN)/twine upload --repository testpypi dist/*
+#	@echo "Published to TestPyPI!"

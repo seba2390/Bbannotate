@@ -86,18 +86,11 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-8 dark:bg-gray-900">
       <div className="w-full max-w-2xl">
-        {/* Logo */}
+        {/* Stylized App Name */}
         <div className="-mt-4 mb-4 flex justify-center">
-          <div
-            className="relative h-48 w-96"
-            style={{
-              maskImage: 'radial-gradient(ellipse 80% 80% at center, black 40%, transparent 100%)',
-              WebkitMaskImage:
-                'radial-gradient(ellipse 80% 80% at center, black 40%, transparent 100%)',
-            }}
-          >
-            <img src="/logo.png" alt="Bbannotate Logo" className="h-full w-full object-contain" />
-          </div>
+          <h1 className="bg-gradient-to-r from-primary-500 via-purple-500 to-pink-500 bg-clip-text text-6xl font-extrabold tracking-tight text-transparent">
+            Bbannotate
+          </h1>
         </div>
 
         {/* Subtitle */}
