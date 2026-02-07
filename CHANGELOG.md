@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed YOLO export showing 0 annotated images: ExportDialog now fetches count directly on open
 - Fixed done status not persisting when reopening a project (get_all_done_status now returns status for all images)
+- Fixed train/val split slider: tick marks now vertically centered on track, reduced slider handle size for better proportions
+- Fixed bounding box not being saved when user draws before defining labels: pending annotation is now saved with the first label after labels are created
 
 ## [1.0.5] - 2026-02-05
 

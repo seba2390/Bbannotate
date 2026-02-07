@@ -327,14 +327,14 @@ export function ExportDialog({ onClose }: ExportDialogProps): JSX.Element {
 
                   {/* Interactive slider */}
                   <div
-                    className="relative py-6"
+                    className="relative pb-4 pt-6"
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
                   >
                     {/* Slider track */}
                     <div
                       ref={sliderRef}
-                      className="relative h-3 cursor-pointer rounded-full bg-gradient-to-r from-emerald-500 via-emerald-400 to-amber-500"
+                      className="relative h-2 cursor-pointer rounded-full bg-gradient-to-r from-emerald-500 via-emerald-400 to-amber-500"
                       onMouseDown={handleMouseDown}
                       onMouseMove={handleMouseMove}
                       role="slider"
@@ -345,63 +345,60 @@ export function ExportDialog({ onClose }: ExportDialogProps): JSX.Element {
                       tabIndex={0}
                       onKeyDown={handleKeyDown}
                     >
-                      {/* Tick marks */}
-                      <div className="absolute inset-0 flex items-center justify-between px-0">
-                        {feasibleSplits.map((split, index) => {
-                          const position =
-                            feasibleSplits.length > 1
-                              ? (index / (feasibleSplits.length - 1)) * 100
-                              : 50;
-                          const isSelected = index === selectedSplitIndex;
-                          return (
-                            <button
-                              key={index}
-                              type="button"
-                              onClick={() => setSelectedSplitIndex(index)}
-                              className="absolute flex flex-col items-center"
-                              style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
-                              tabIndex={-1}
-                            >
-                              {/* Tick mark */}
-                              <div
-                                className={`h-5 w-1 rounded-full transition-all ${
+                      {/* Tick marks - positioned to center vertically on track */}
+                      {feasibleSplits.map((split, index) => {
+                        const position =
+                          feasibleSplits.length > 1
+                            ? (index / (feasibleSplits.length - 1)) * 100
+                            : 50;
+                        const isSelected = index === selectedSplitIndex;
+                        const showLabel =
+                          index === 0 || index === feasibleSplits.length - 1 || isSelected;
+                        return (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedSplitIndex(index);
+                            }}
+                            className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                            style={{ left: `${position}%` }}
+                            tabIndex={-1}
+                          >
+                            {/* Tick mark - vertically centered */}
+                            <div
+                              className={`h-3 w-0.5 rounded-full transition-all ${
+                                isSelected ? 'bg-white shadow-lg' : 'bg-white/60 hover:bg-white/80'
+                              }`}
+                            />
+                            {/* Label below tick */}
+                            {showLabel && (
+                              <span
+                                className={`absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap text-xs font-medium transition-all ${
                                   isSelected
-                                    ? 'bg-white shadow-lg'
-                                    : 'bg-white/60 hover:bg-white/80'
+                                    ? 'text-gray-900 dark:text-white'
+                                    : 'text-gray-500 dark:text-gray-400'
                                 }`}
-                              />
-                              {/* Label below tick - show for first, last, and selected */}
-                              {(index === 0 ||
-                                index === feasibleSplits.length - 1 ||
-                                isSelected) && (
-                                <span
-                                  className={`mt-2 text-xs font-medium transition-all ${
-                                    isSelected
-                                      ? 'text-gray-900 dark:text-white'
-                                      : 'text-gray-500 dark:text-gray-400'
-                                  }`}
-                                >
-                                  {split.label}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
+                              >
+                                {split.label}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
 
                       {/* Slider handle */}
                       <div
-                        className={`absolute top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-white bg-primary-500 shadow-lg transition-all ${
-                          isDragging ? 'scale-110 shadow-xl' : 'hover:scale-105'
+                        className={`pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary-500 shadow-md transition-all ${
+                          isDragging ? 'scale-110 shadow-lg' : ''
                         }`}
                         style={{ left: `${sliderPosition}%` }}
-                      >
-                        <div className="absolute inset-0 rounded-full bg-primary-400 opacity-0 transition-opacity hover:opacity-30" />
-                      </div>
+                      />
                     </div>
 
                     {/* Axis labels */}
-                    <div className="mt-6 flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                    <div className="mt-8 flex justify-between text-xs text-gray-500 dark:text-gray-400">
                       <span className="flex items-center gap-1">
                         <span className="h-2 w-2 rounded-full bg-emerald-500" />
                         More training

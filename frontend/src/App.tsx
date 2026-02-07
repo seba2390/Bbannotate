@@ -80,6 +80,12 @@ function App(): JSX.Element {
   });
   const [doneCount, setDoneCount] = useState(0);
   const [doneStatus, setDoneStatus] = useState<Record<string, boolean>>({});
+  // Pending annotation when user draws before defining labels
+  const [pendingAnnotation, setPendingAnnotation] = useState<{
+    rect: DrawingRect;
+    imageWidth: number;
+    imageHeight: number;
+  } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -229,6 +235,7 @@ function App(): JSX.Element {
       if (!currentImage) return;
       // If no labels defined, prompt user to create one first
       if (labels.length === 0) {
+        setPendingAnnotation({ rect, imageWidth, imageHeight });
         setShowLabelManager(true);
         addToast('Please create a label first before annotating', 'info');
         return;
@@ -340,12 +347,28 @@ function App(): JSX.Element {
     (newLabels: string[]): void => {
       setLabels(newLabels);
       saveLabelsForProject(currentProject?.name ?? null, newLabels);
+
+      const firstLabel = newLabels[0] ?? '';
+
       // If current label was removed, switch to first label
       if (!newLabels.includes(currentLabel) && newLabels.length > 0) {
-        setCurrentLabel(newLabels[0] ?? '');
+        setCurrentLabel(firstLabel);
+      }
+
+      // If there's a pending annotation and we now have labels, create it
+      if (pendingAnnotation && currentImage && newLabels.length > 0) {
+        addAnnotation(
+          currentImage,
+          firstLabel,
+          0,
+          pendingAnnotation.rect,
+          pendingAnnotation.imageWidth,
+          pendingAnnotation.imageHeight
+        );
+        setPendingAnnotation(null);
       }
     },
-    [currentLabel, currentProject?.name]
+    [currentLabel, currentProject?.name, pendingAnnotation, currentImage, addAnnotation]
   );
 
   const handleDeleteImage = useCallback(
@@ -566,7 +589,10 @@ function App(): JSX.Element {
         <LabelManager
           labels={labels}
           onLabelsChange={handleLabelsChange}
-          onClose={() => setShowLabelManager(false)}
+          onClose={() => {
+            setShowLabelManager(false);
+            setPendingAnnotation(null);
+          }}
         />
       )}
 
