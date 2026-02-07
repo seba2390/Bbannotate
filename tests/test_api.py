@@ -518,7 +518,7 @@ class TestExportEndpoints:
         self, client: TestClient, temp_data_dir: Path, sample_image: bytes
     ) -> None:
         """Test YOLO export with images and annotations."""
-        # Create some data
+        # Create some data and mark as done
         for i in range(3):
             client.post(
                 "/api/images",
@@ -530,10 +530,10 @@ class TestExportEndpoints:
                 "bbox": {"x": 0.5, "y": 0.5, "width": 0.2, "height": 0.2},
             }
             client.post(f"/api/images/image_{i}.png/annotations", json=annotation)
+            # Mark image as done so it will be exported
+            client.patch(f"/api/images/image_{i}.png/done?done=true")
 
-        response = client.post(
-            "/api/export/yolo?train_split=0.7&val_split=0.2&test_split=0.1"
-        )
+        response = client.post("/api/export/yolo?train_split=0.7&val_split=0.3")
         assert response.status_code == 200
 
         # Verify it's a valid ZIP
@@ -542,8 +542,7 @@ class TestExportEndpoints:
             names = zf.namelist()
             assert "data.yaml" in names
             assert any("train/" in n for n in names)
-            # With only 3 images and 0.2 val split, we may not have val images
-            # Check test instead since we have 0.1 test split
+            # Should have train and/or val images (3 images with 0.7/0.3 split)
 
     def test_export_yolo_train_split_validation(
         self, client: TestClient, temp_data_dir: Path
@@ -621,6 +620,12 @@ class TestExportWithProjectId:
             headers={"X-Project-Id": project_id},
         )
 
+        # Mark image as done
+        client.patch(
+            "/api/images/test.png/done?done=true",
+            headers={"X-Project-Id": project_id},
+        )
+
         # Export with project_id query parameter (simulating form submission)
         response = client.post(f"/api/export/yolo?project_id={project_id}")
         assert response.status_code == 200
@@ -654,6 +659,8 @@ class TestExportWithProjectId:
             "bbox": {"x": 0.5, "y": 0.5, "width": 0.2, "height": 0.2},
         }
         client.post("/api/images/legacy.png/annotations", json=annotation)
+        # Mark as done
+        client.patch("/api/images/legacy.png/done?done=true")
 
         # Export without project_id
         response = client.post("/api/export/yolo")

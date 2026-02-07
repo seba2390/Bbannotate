@@ -14,6 +14,7 @@ interface UseImagesResult {
   prevImage: () => void;
   uploadImages: (files: File[]) => Promise<void>;
   deleteImage: (filename: string) => Promise<void>;
+  deleteImages: (filenames: string[]) => Promise<void>;
 }
 
 /**
@@ -119,6 +120,27 @@ export function useImages(): UseImagesResult {
     [currentImage, currentIndex]
   );
 
+  const deleteImages = useCallback(
+    async (filenames: string[]) => {
+      try {
+        await api.deleteImages(filenames);
+        const filesToDelete = new Set(filenames);
+        setImages((prev) => {
+          const newImages = prev.filter((i) => !filesToDelete.has(i));
+          if (currentImage && filesToDelete.has(currentImage)) {
+            const oldIndex = prev.indexOf(currentImage);
+            const newCurrentIndex = Math.min(oldIndex, newImages.length - 1);
+            setCurrentImage(newImages[newCurrentIndex] ?? null);
+          }
+          return newImages;
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete images');
+      }
+    },
+    [currentImage]
+  );
+
   // Note: Don't auto-load on mount - let App call refreshImages when project opens
 
   return {
@@ -134,5 +156,6 @@ export function useImages(): UseImagesResult {
     prevImage,
     uploadImages,
     deleteImage,
+    deleteImages,
   };
 }

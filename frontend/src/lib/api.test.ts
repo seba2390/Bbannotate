@@ -91,6 +91,14 @@ describe('API Client', () => {
     it('should delete an image', async () => {
       await expect(api.deleteImage('image1.png')).resolves.not.toThrow();
     });
+
+    it('should delete multiple images', async () => {
+      await expect(api.deleteImages(['image1.png', 'image2.jpg'])).resolves.not.toThrow();
+    });
+
+    it('should handle empty array for bulk delete', async () => {
+      await expect(api.deleteImages([])).resolves.not.toThrow();
+    });
   });
 
   describe('Annotation Management', () => {
@@ -140,13 +148,13 @@ describe('API Client', () => {
     it('should generate correct YOLO export URL', () => {
       api.setCurrentProjectId(null);
       const url = api.getExportUrl('yolo');
-      expect(url).toBe('/api/export/yolo?train_split=0.7&val_split=0.2&test_split=0.1');
+      expect(url).toBe('/api/export/yolo?train_split=0.8&val_split=0.2');
     });
 
     it('should generate correct YOLO export URL with custom split', () => {
       api.setCurrentProjectId(null);
-      const url = api.getExportUrl('yolo', { train: 0.8, val: 0.1, test: 0.1 });
-      expect(url).toBe('/api/export/yolo?train_split=0.8&val_split=0.1&test_split=0.1');
+      const url = api.getExportUrl('yolo', { train: 0.7, val: 0.3 });
+      expect(url).toBe('/api/export/yolo?train_split=0.7&val_split=0.3');
     });
 
     it('should generate correct COCO export URL', () => {
@@ -172,9 +180,7 @@ describe('API Client', () => {
     it('should include project_id in YOLO export URL when project is set', () => {
       api.setCurrentProjectId('my-project');
       const url = api.getExportUrl('yolo');
-      expect(url).toBe(
-        '/api/export/yolo?train_split=0.7&val_split=0.2&test_split=0.1&project_id=my-project'
-      );
+      expect(url).toBe('/api/export/yolo?train_split=0.8&val_split=0.2&project_id=my-project');
       api.setCurrentProjectId(null);
     });
 

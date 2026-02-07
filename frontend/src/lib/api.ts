@@ -101,6 +101,10 @@ export async function deleteImage(filename: string): Promise<void> {
   await api.delete(`/images/${encodeURIComponent(filename)}`);
 }
 
+export async function deleteImages(filenames: string[]): Promise<void> {
+  await Promise.all(filenames.map((f) => deleteImage(f)));
+}
+
 export async function markImageDone(filename: string, done: boolean = true): Promise<void> {
   await api.patch(`/images/${encodeURIComponent(filename)}/done?done=${done}`);
 }
@@ -181,7 +185,7 @@ export const EXPORT_FORMATS: ExportFormatInfo[] = [
   {
     id: 'yolo',
     name: 'YOLO',
-    description: 'Ultralytics YOLO format with train/val/test split',
+    description: 'Ultralytics YOLO format with train/val split (done images only)',
     fileType: 'ZIP',
   },
   {
@@ -213,17 +217,16 @@ export const EXPORT_FORMATS: ExportFormatInfo[] = [
 export interface DataSplit {
   train: number;
   val: number;
-  test: number;
 }
 
 export function getExportUrl(
   format: ExportFormat,
-  split: DataSplit = { train: 0.7, val: 0.2, test: 0.1 }
+  split: DataSplit = { train: 0.8, val: 0.2 }
 ): string {
   const projectParam = currentProjectId ? `project_id=${encodeURIComponent(currentProjectId)}` : '';
   switch (format) {
     case 'yolo':
-      return `/api/export/yolo?train_split=${split.train}&val_split=${split.val}&test_split=${split.test}${projectParam ? `&${projectParam}` : ''}`;
+      return `/api/export/yolo?train_split=${split.train}&val_split=${split.val}${projectParam ? `&${projectParam}` : ''}`;
     case 'coco':
       return `/api/export/coco${projectParam ? `?${projectParam}` : ''}`;
     case 'pascal-voc':
@@ -235,11 +238,11 @@ export function getExportUrl(
   }
 }
 
-export function getYoloExportUrl(split: DataSplit = { train: 0.7, val: 0.2, test: 0.1 }): string {
+export function getYoloExportUrl(split: DataSplit = { train: 0.8, val: 0.2 }): string {
   const projectParam = currentProjectId
     ? `&project_id=${encodeURIComponent(currentProjectId)}`
     : '';
-  return `/api/export/yolo?train_split=${split.train}&val_split=${split.val}&test_split=${split.test}${projectParam}`;
+  return `/api/export/yolo?train_split=${split.train}&val_split=${split.val}${projectParam}`;
 }
 
 export function getCocoExportUrl(): string {

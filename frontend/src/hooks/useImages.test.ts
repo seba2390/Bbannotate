@@ -257,4 +257,74 @@ describe('useImages', () => {
       expect(result.current.currentImage).toBeNull();
     });
   });
+
+  describe('deleteImages (bulk delete)', () => {
+    it('should remove multiple images from list', async () => {
+      const { result } = renderHook(() => useImages());
+
+      await act(async () => {
+        await result.current.loadImages();
+      });
+
+      const initialCount = result.current.images.length;
+      const imagesToDelete = [mockImages[0]!, mockImages[2]!];
+
+      await act(async () => {
+        await result.current.deleteImages(imagesToDelete);
+      });
+
+      expect(result.current.images.length).toBe(initialCount - 2);
+      expect(result.current.images).not.toContain(mockImages[0]);
+      expect(result.current.images).not.toContain(mockImages[2]);
+      expect(result.current.images).toContain(mockImages[1]);
+    });
+
+    it('should select next image if current is among deleted', async () => {
+      const { result } = renderHook(() => useImages());
+
+      await act(async () => {
+        await result.current.loadImages();
+      });
+
+      expect(result.current.currentImage).toBe(mockImages[0]);
+
+      await act(async () => {
+        await result.current.deleteImages([mockImages[0]!]);
+      });
+
+      // Should move to next available image
+      expect(result.current.currentImage).toBe(mockImages[1]);
+    });
+
+    it('should handle deleting all images', async () => {
+      const { result } = renderHook(() => useImages());
+
+      await act(async () => {
+        await result.current.loadImages();
+      });
+
+      await act(async () => {
+        await result.current.deleteImages([...mockImages]);
+      });
+
+      expect(result.current.images).toEqual([]);
+      expect(result.current.currentImage).toBeNull();
+    });
+
+    it('should handle empty array', async () => {
+      const { result } = renderHook(() => useImages());
+
+      await act(async () => {
+        await result.current.loadImages();
+      });
+
+      const initialCount = result.current.images.length;
+
+      await act(async () => {
+        await result.current.deleteImages([]);
+      });
+
+      expect(result.current.images.length).toBe(initialCount);
+    });
+  });
 });
