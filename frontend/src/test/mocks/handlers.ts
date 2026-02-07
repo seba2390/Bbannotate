@@ -44,6 +44,7 @@ export const mockProjectInfo = {
   image_count: 5,
   annotation_count: 10,
   annotated_image_count: 4,
+  done_image_count: 3,
 };
 
 let currentProjectId: string | null = null;

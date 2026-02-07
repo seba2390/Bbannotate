@@ -80,6 +80,12 @@ function App(): JSX.Element {
   });
   const [doneCount, setDoneCount] = useState(0);
   const [doneStatus, setDoneStatus] = useState<Record<string, boolean>>({});
+  // Pending annotation when user draws before defining labels
+  const [pendingAnnotation, setPendingAnnotation] = useState<{
+    rect: DrawingRect;
+    imageWidth: number;
+    imageHeight: number;
+  } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -87,6 +93,7 @@ function App(): JSX.Element {
     onConfirm: () => void;
     destructive?: boolean;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
   const { toasts, addToast, removeToast } = useToast();
 
   const {
@@ -100,6 +107,7 @@ function App(): JSX.Element {
     nextImage,
     prevImage,
     deleteImage,
+    deleteImages,
     refreshImages,
   } = useImages();
 
@@ -141,6 +149,7 @@ function App(): JSX.Element {
     setCurrentLabel('');
     setDoneStatus({});
     setDoneCount(0);
+    setSelectedImages(new Set());
   }, []);
 
   // Helper to show confirm dialog
@@ -221,89 +230,12 @@ function App(): JSX.Element {
     }
   }, [canUndo, undoLastAnnotation]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent): void => {
-      // Ignore if typing in input
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLSelectElement ||
-        e.target instanceof HTMLTextAreaElement
-      ) {
-        return;
-      }
-
-      switch (e.key) {
-        case 'z':
-        case 'Z':
-          if (e.metaKey || e.ctrlKey) {
-            e.preventDefault();
-            handleUndo();
-          }
-          break;
-        case 's':
-        case 'S':
-          // Don't trigger select mode if Cmd/Ctrl is pressed (e.g., Cmd+S for save)
-          if (!e.metaKey && !e.ctrlKey) {
-            setToolMode('select');
-          }
-          break;
-        case 'd':
-        case 'D':
-          setToolMode('draw');
-          break;
-        case ' ':
-          e.preventDefault(); // Prevent page scroll
-          setToolMode('pan');
-          break;
-        case 'ArrowLeft':
-          prevImage();
-          break;
-        case 'ArrowRight':
-          nextImage();
-          break;
-        case 'Delete':
-        case 'Backspace':
-          handleDeleteSelected();
-          break;
-        case 'Escape':
-          handleDeselect();
-          break;
-        case '1':
-        case '2':
-        case '3':
-        case '4':
-        case '5':
-        case '6':
-        case '7':
-        case '8':
-        case '9': {
-          const idx = parseInt(e.key, 10) - 1;
-          if (idx < labels.length) {
-            setCurrentLabel(labels[idx] ?? currentLabel);
-          }
-          break;
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    prevImage,
-    nextImage,
-    handleDeleteSelected,
-    handleDeselect,
-    handleUndo,
-    labels,
-    currentLabel,
-  ]);
-
   const handleAddAnnotation = useCallback(
     (rect: DrawingRect, imageWidth: number, imageHeight: number) => {
       if (!currentImage) return;
       // If no labels defined, prompt user to create one first
       if (labels.length === 0) {
+        setPendingAnnotation({ rect, imageWidth, imageHeight });
         setShowLabelManager(true);
         addToast('Please create a label first before annotating', 'info');
         return;
@@ -415,12 +347,28 @@ function App(): JSX.Element {
     (newLabels: string[]): void => {
       setLabels(newLabels);
       saveLabelsForProject(currentProject?.name ?? null, newLabels);
+
+      const firstLabel = newLabels[0] ?? '';
+
       // If current label was removed, switch to first label
       if (!newLabels.includes(currentLabel) && newLabels.length > 0) {
-        setCurrentLabel(newLabels[0] ?? '');
+        setCurrentLabel(firstLabel);
+      }
+
+      // If there's a pending annotation and we now have labels, create it
+      if (pendingAnnotation && currentImage && newLabels.length > 0) {
+        addAnnotation(
+          currentImage,
+          firstLabel,
+          0,
+          pendingAnnotation.rect,
+          pendingAnnotation.imageWidth,
+          pendingAnnotation.imageHeight
+        );
+        setPendingAnnotation(null);
       }
     },
-    [currentLabel, currentProject?.name]
+    [currentLabel, currentProject?.name, pendingAnnotation, currentImage, addAnnotation]
   );
 
   const handleDeleteImage = useCallback(
@@ -430,6 +378,12 @@ function App(): JSX.Element {
         `Delete "${filename}" and all its annotations?`,
         () => {
           deleteImage(filename);
+          // Also remove from selection if selected
+          setSelectedImages((prev) => {
+            const next = new Set(prev);
+            next.delete(filename);
+            return next;
+          });
           closeConfirm();
         },
         true
@@ -437,6 +391,107 @@ function App(): JSX.Element {
     },
     [deleteImage, showConfirm, closeConfirm]
   );
+
+  const handleDeleteSelectedImages = useCallback(() => {
+    if (selectedImages.size === 0) return;
+    const count = selectedImages.size;
+    showConfirm(
+      'Delete Selected Images',
+      `Delete ${count} selected image${count > 1 ? 's' : ''} and all their annotations?`,
+      async () => {
+        await deleteImages(Array.from(selectedImages));
+        // Update done count for deleted images
+        const deletedDoneCount = Array.from(selectedImages).filter((img) => doneStatus[img]).length;
+        setDoneCount((prev) => Math.max(0, prev - deletedDoneCount));
+        setSelectedImages(new Set());
+        closeConfirm();
+      },
+      true
+    );
+  }, [selectedImages, deleteImages, doneStatus, showConfirm, closeConfirm]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      // Ignore if typing in input
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLSelectElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      switch (e.key) {
+        case 'z':
+        case 'Z':
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            handleUndo();
+          }
+          break;
+        case 's':
+        case 'S':
+          // Don't trigger select mode if Cmd/Ctrl is pressed (e.g., Cmd+S for save)
+          if (!e.metaKey && !e.ctrlKey) {
+            setToolMode('select');
+          }
+          break;
+        case 'd':
+        case 'D':
+          setToolMode('draw');
+          break;
+        case ' ':
+          e.preventDefault(); // Prevent page scroll
+          setToolMode('pan');
+          break;
+        case 'ArrowLeft':
+          prevImage();
+          break;
+        case 'ArrowRight':
+          nextImage();
+          break;
+        case 'Delete':
+        case 'Backspace':
+          handleDeleteSelected();
+          break;
+        case 'Escape':
+          handleDeselect();
+          break;
+        case 'Enter':
+          e.preventDefault();
+          handleMarkDone();
+          break;
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9': {
+          const idx = parseInt(e.key, 10) - 1;
+          if (idx < labels.length) {
+            setCurrentLabel(labels[idx] ?? currentLabel);
+          }
+          break;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    prevImage,
+    nextImage,
+    handleDeleteSelected,
+    handleDeselect,
+    handleUndo,
+    handleMarkDone,
+    labels,
+    currentLabel,
+  ]);
 
   const loading = imagesLoading || annotationsLoading;
 
@@ -534,7 +589,10 @@ function App(): JSX.Element {
         <LabelManager
           labels={labels}
           onLabelsChange={handleLabelsChange}
-          onClose={() => setShowLabelManager(false)}
+          onClose={() => {
+            setShowLabelManager(false);
+            setPendingAnnotation(null);
+          }}
         />
       )}
 
@@ -556,8 +614,11 @@ function App(): JSX.Element {
               images={images}
               currentImage={currentImage}
               doneStatus={doneStatus}
+              selectedImages={selectedImages}
               onSelectImage={selectImage}
               onDeleteImage={handleDeleteImage}
+              onSelectedImagesChange={setSelectedImages}
+              onDeleteSelectedImages={handleDeleteSelectedImages}
             />
           </div>
         </aside>
@@ -710,6 +771,12 @@ function App(): JSX.Element {
                 1-9
               </kbd>
               <span className="text-gray-500 dark:text-gray-400">Labels</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                Enter
+              </kbd>
+              <span className="text-gray-500 dark:text-gray-400">Done</span>
             </div>
           </div>
           <span className="font-medium text-gray-600 dark:text-gray-300">{currentImage ?? ''}</span>

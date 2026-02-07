@@ -43,13 +43,28 @@ def sample_image_bytes() -> bytes:
 
 
 def create_test_dataset(
-    service: AnnotationService, sample_image_bytes: bytes, num_images: int = 5
-) -> None:
-    """Create a test dataset with images and annotations."""
+    service: AnnotationService,
+    sample_image_bytes: bytes,
+    num_images: int = 5,
+    mark_done: bool = True,
+) -> list[str]:
+    """Create a test dataset with images and annotations.
+
+    Args:
+        service: The annotation service.
+        sample_image_bytes: Sample image data.
+        num_images: Number of images to create.
+        mark_done: Whether to mark images as done (needed for export).
+
+    Returns:
+        List of created filenames.
+    """
     labels = ["product", "price", "brand"]
+    filenames = []
     for i in range(num_images):
         filename = f"image_{i:03d}.png"
         service.upload_image(filename, sample_image_bytes)
+        filenames.append(filename)
 
         # Add 2-3 annotations per image
         for j in range(2 + (i % 2)):
@@ -62,6 +77,12 @@ def create_test_dataset(
             label = labels[j % len(labels)]
             create = AnnotationCreate(label=label, class_id=j % len(labels), bbox=bbox)
             service.add_annotation(filename, create)
+
+        # Mark as done so it will be exported
+        if mark_done:
+            service.mark_image_done(filename, done=True)
+
+    return filenames
 
 
 class TestExportServiceInit:
@@ -146,27 +167,25 @@ class TestYoloExport:
         assert "price" in content
         assert "brand" in content
 
-    def test_export_yolo_train_val_test_split(
+    def test_export_yolo_train_val_split(
         self,
         annotation_service: AnnotationService,
         export_service: ExportService,
         sample_image_bytes: bytes,
         temp_data_dir: Path,
     ) -> None:
-        """Test train/validation/test split."""
+        """Test train/validation split (no test set)."""
         create_test_dataset(annotation_service, sample_image_bytes, num_images=10)
         output_dir = temp_data_dir / "yolo_export"
-        export_service.export_yolo(
-            output_dir, train_split=0.7, val_split=0.2, test_split=0.1
-        )
+        export_service.export_yolo(output_dir, train_split=0.8, val_split=0.2)
 
         train_images = list((output_dir / "train" / "images").glob("*.png"))
         val_images = list((output_dir / "val" / "images").glob("*.png"))
-        test_images = list((output_dir / "test" / "images").glob("*.png"))
 
-        assert len(train_images) == 7
+        assert len(train_images) == 8
         assert len(val_images) == 2
-        assert len(test_images) == 1
+        # No test directory should be created
+        assert not (output_dir / "test").exists()
 
     def test_export_yolo_label_files_created(
         self,
@@ -181,12 +200,11 @@ class TestYoloExport:
         annotation_service.add_annotation(
             "test.png", AnnotationCreate(label="product", class_id=0, bbox=bbox)
         )
+        annotation_service.mark_image_done("test.png", done=True)
 
         output_dir = temp_data_dir / "yolo_export"
         # All to train
-        export_service.export_yolo(
-            output_dir, train_split=1.0, val_split=0.0, test_split=0.0
-        )
+        export_service.export_yolo(output_dir, train_split=1.0, val_split=0.0)
 
         label_file = output_dir / "train" / "labels" / "test.txt"
         assert label_file.exists()
@@ -204,11 +222,10 @@ class TestYoloExport:
         annotation_service.add_annotation(
             "test.png", AnnotationCreate(label="product", class_id=0, bbox=bbox)
         )
+        annotation_service.mark_image_done("test.png", done=True)
 
         output_dir = temp_data_dir / "yolo_export"
-        export_service.export_yolo(
-            output_dir, train_split=1.0, val_split=0.0, test_split=0.0
-        )
+        export_service.export_yolo(output_dir, train_split=1.0, val_split=0.0)
 
         label_file = output_dir / "train" / "labels" / "test.txt"
         content = label_file.read_text().strip()
@@ -237,11 +254,10 @@ class TestYoloExport:
             annotation_service.add_annotation(
                 "test.png", AnnotationCreate(label=f"label{i}", class_id=i, bbox=bbox)
             )
+        annotation_service.mark_image_done("test.png", done=True)
 
         output_dir = temp_data_dir / "yolo_export"
-        export_service.export_yolo(
-            output_dir, train_split=1.0, val_split=0.0, test_split=0.0
-        )
+        export_service.export_yolo(output_dir, train_split=1.0, val_split=0.0)
 
         label_file = output_dir / "train" / "labels" / "test.txt"
         lines = label_file.read_text().strip().split("\n")
@@ -295,6 +311,7 @@ class TestYoloExport:
             annotation_service.add_annotation(
                 "test.png", AnnotationCreate(label=label, class_id=0, bbox=bbox)
             )
+        annotation_service.mark_image_done("test.png", done=True)
 
         output_dir = temp_data_dir / "yolo_export"
         yaml_path = export_service.export_yolo(output_dir)
@@ -311,7 +328,7 @@ class TestYoloExport:
         export_service: ExportService,
         temp_data_dir: Path,
     ) -> None:
-        """Test that YOLO data.yaml has nc=0 with no labels when dataset is empty."""
+        """Test that YOLO data.yaml has nc=0 with no labels when no done images."""
         output_dir = temp_data_dir / "yolo_export"
         yaml_path = export_service.export_yolo(output_dir)
         content = yaml_path.read_text()
@@ -324,6 +341,118 @@ class TestYoloExport:
         # Lines after "names:" should be empty or not contain class mappings
         remaining = "\n".join(lines[names_idx + 1 :])
         assert "0:" not in remaining
+
+    def test_export_yolo_only_done_images(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test that only images marked as done are exported."""
+        # Create 5 images with annotations
+        for i in range(5):
+            filename = f"image_{i:03d}.png"
+            annotation_service.upload_image(filename, sample_image_bytes)
+            bbox = BoundingBox(x=0.5, y=0.5, width=0.2, height=0.2)
+            annotation_service.add_annotation(
+                filename, AnnotationCreate(label="product", class_id=0, bbox=bbox)
+            )
+            # Only mark 3 of them as done
+            if i < 3:
+                annotation_service.mark_image_done(filename, done=True)
+
+        output_dir = temp_data_dir / "yolo_export"
+        export_service.export_yolo(output_dir, train_split=1.0, val_split=0.0)
+
+        # Should only export the 3 done images
+        train_images = list((output_dir / "train" / "images").glob("*.png"))
+        assert len(train_images) == 3
+        # Check the correct images were exported
+        exported_names = {img.name for img in train_images}
+        assert exported_names == {"image_000.png", "image_001.png", "image_002.png"}
+
+    def test_export_yolo_shuffle_reproducible(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test that shuffle with same seed produces same order."""
+        # Create 10 images marked as done
+        for i in range(10):
+            filename = f"image_{i:03d}.png"
+            annotation_service.upload_image(filename, sample_image_bytes)
+            bbox = BoundingBox(x=0.5, y=0.5, width=0.2, height=0.2)
+            annotation_service.add_annotation(
+                filename, AnnotationCreate(label="product", class_id=0, bbox=bbox)
+            )
+            annotation_service.mark_image_done(filename, done=True)
+
+        # Export twice with same seed
+        output_dir1 = temp_data_dir / "yolo_export1"
+        output_dir2 = temp_data_dir / "yolo_export2"
+
+        export_service.export_yolo(
+            output_dir1, train_split=0.7, val_split=0.3, shuffle=True, seed=42
+        )
+        export_service.export_yolo(
+            output_dir2, train_split=0.7, val_split=0.3, shuffle=True, seed=42
+        )
+
+        # Should have same images in train and val
+        train_dir1 = output_dir1 / "train" / "images"
+        train_dir2 = output_dir2 / "train" / "images"
+        val_dir1 = output_dir1 / "val" / "images"
+        val_dir2 = output_dir2 / "val" / "images"
+
+        train1 = sorted([f.name for f in train_dir1.glob("*.png")])
+        train2 = sorted([f.name for f in train_dir2.glob("*.png")])
+        val1 = sorted([f.name for f in val_dir1.glob("*.png")])
+        val2 = sorted([f.name for f in val_dir2.glob("*.png")])
+
+        assert train1 == train2
+        assert val1 == val2
+
+    def test_export_yolo_shuffle_different_seeds(
+        self,
+        annotation_service: AnnotationService,
+        export_service: ExportService,
+        sample_image_bytes: bytes,
+        temp_data_dir: Path,
+    ) -> None:
+        """Test that different seeds produce different orders."""
+        # Create 10 images marked as done
+        for i in range(10):
+            filename = f"image_{i:03d}.png"
+            annotation_service.upload_image(filename, sample_image_bytes)
+            bbox = BoundingBox(x=0.5, y=0.5, width=0.2, height=0.2)
+            annotation_service.add_annotation(
+                filename, AnnotationCreate(label="product", class_id=0, bbox=bbox)
+            )
+            annotation_service.mark_image_done(filename, done=True)
+
+        # Export with different seeds
+        output_dir1 = temp_data_dir / "yolo_export1"
+        output_dir2 = temp_data_dir / "yolo_export2"
+
+        export_service.export_yolo(
+            output_dir1, train_split=0.5, val_split=0.5, shuffle=True, seed=42
+        )
+        export_service.export_yolo(
+            output_dir2, train_split=0.5, val_split=0.5, shuffle=True, seed=123
+        )
+
+        # Should (likely) have different images in train/val
+        train_dir1 = output_dir1 / "train" / "images"
+        train_dir2 = output_dir2 / "train" / "images"
+
+        train1 = sorted([f.name for f in train_dir1.glob("*.png")])
+        train2 = sorted([f.name for f in train_dir2.glob("*.png")])
+
+        # Very unlikely to be the same with different seeds
+        assert train1 != train2
 
 
 class TestYoloZipExport:
@@ -397,17 +526,15 @@ class TestYoloZipExport:
         assert "price" in yaml_content
         assert "product" in yaml_content
 
-    def test_export_yolo_zip_train_val_test_split(
+    def test_export_yolo_zip_train_val_split(
         self,
         annotation_service: AnnotationService,
         export_service: ExportService,
         sample_image_bytes: bytes,
     ) -> None:
-        """Test that train/val/test split parameters work."""
+        """Test that train/val split parameters work (no test split)."""
         create_test_dataset(annotation_service, sample_image_bytes, num_images=10)
-        zip_path = export_service.export_yolo_zip(
-            train_split=0.5, val_split=0.3, test_split=0.2
-        )
+        zip_path = export_service.export_yolo_zip(train_split=0.6, val_split=0.4)
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
@@ -415,12 +542,13 @@ class TestYoloZipExport:
                 n for n in names if "train/images/" in n and n.endswith(".png")
             ]
             val_images = [n for n in names if "val/images/" in n and n.endswith(".png")]
+            # No test directory should exist
             test_images = [
                 n for n in names if "test/images/" in n and n.endswith(".png")
             ]
-            assert len(train_images) == 5
-            assert len(val_images) == 3
-            assert len(test_images) == 2
+            assert len(train_images) == 6
+            assert len(val_images) == 4
+            assert len(test_images) == 0
 
 
 class TestCocoExport:

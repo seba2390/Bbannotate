@@ -487,3 +487,101 @@ class TestBackup:
         assert backup_path.exists()
         assert (backup_path / "images" / "test.png").exists()
         assert (backup_path / "annotations" / "test.json").exists()
+
+
+class TestDoneStatus:
+    """Tests for image done status tracking."""
+
+    def test_mark_image_done(
+        self, service: AnnotationService, sample_image_bytes: bytes
+    ) -> None:
+        """Test marking an image as done."""
+        service.upload_image("test.png", sample_image_bytes)
+        result = service.mark_image_done("test.png", done=True)
+        assert result is True
+        assert service.get_image_done_status("test.png") is True
+
+    def test_mark_image_not_done(
+        self, service: AnnotationService, sample_image_bytes: bytes
+    ) -> None:
+        """Test marking an image as not done."""
+        service.upload_image("test.png", sample_image_bytes)
+        service.mark_image_done("test.png", done=True)
+        service.mark_image_done("test.png", done=False)
+        assert service.get_image_done_status("test.png") is False
+
+    def test_mark_nonexistent_image_done(self, service: AnnotationService) -> None:
+        """Test marking nonexistent image as done returns False."""
+        result = service.mark_image_done("nonexistent.png", done=True)
+        assert result is False
+
+    def test_get_done_status_nonexistent(self, service: AnnotationService) -> None:
+        """Test get_image_done_status for nonexistent image."""
+        status = service.get_image_done_status("nonexistent.png")
+        assert status is None
+
+    def test_get_all_done_status_empty(self, service: AnnotationService) -> None:
+        """Test get_all_done_status with no images."""
+        status = service.get_all_done_status()
+        assert status == {}
+
+    def test_get_all_done_status_includes_all_images(
+        self, service: AnnotationService, sample_image_bytes: bytes
+    ) -> None:
+        """Test that get_all_done_status includes ALL images, not just annotated."""
+        # Create 3 images - only annotate 1, mark 2 as done
+        for i in range(3):
+            filename = f"image_{i}.png"
+            service.upload_image(filename, sample_image_bytes)
+
+        # Add annotation to first image only
+        bbox = BoundingBox(x=0.5, y=0.5, width=0.2, height=0.2)
+        service.add_annotation(
+            "image_0.png", AnnotationCreate(label="product", class_id=0, bbox=bbox)
+        )
+
+        # Mark first two as done
+        service.mark_image_done("image_0.png", done=True)
+        service.mark_image_done("image_1.png", done=True)
+
+        status = service.get_all_done_status()
+
+        # All 3 images should be in the result
+        assert len(status) == 3
+        assert status["image_0.png"] is True
+        assert status["image_1.png"] is True
+        assert status["image_2.png"] is False  # Not marked as done
+
+    def test_get_all_done_status_new_images_default_false(
+        self, service: AnnotationService, sample_image_bytes: bytes
+    ) -> None:
+        """Test that newly uploaded images without annotations default to done=False."""
+        # Upload image without adding annotations or marking done
+        service.upload_image("test.png", sample_image_bytes)
+
+        status = service.get_all_done_status()
+
+        # Image should be in result with done=False
+        assert "test.png" in status
+        assert status["test.png"] is False
+
+    def test_done_status_persists_across_reload(
+        self, temp_data_dir: Path, sample_image_bytes: bytes
+    ) -> None:
+        """Test that done status persists when service is reloaded."""
+        # Create service, add data, mark as done
+        service1 = AnnotationService(temp_data_dir)
+        service1.upload_image("test.png", sample_image_bytes)
+        bbox = BoundingBox(x=0.5, y=0.5, width=0.2, height=0.2)
+        service1.add_annotation(
+            "test.png", AnnotationCreate(label="product", class_id=0, bbox=bbox)
+        )
+        service1.mark_image_done("test.png", done=True)
+
+        # Create new service instance pointing to same directory
+        service2 = AnnotationService(temp_data_dir)
+
+        # Done status should persist
+        status = service2.get_all_done_status()
+        assert status["test.png"] is True
+        assert service2.get_image_done_status("test.png") is True

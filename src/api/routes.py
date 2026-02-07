@@ -226,6 +226,16 @@ async def upload_image(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+# NOTE: This route must be defined BEFORE /images/{filename} to avoid
+# the path parameter matching "done-status" as a filename
+@router.get("/images/done-status", response_model=dict[str, bool])
+def get_all_done_status(
+    service: Annotated[AnnotationService, Depends(get_annotation_service)],
+) -> dict[str, bool]:
+    """Get done status for all images."""
+    return service.get_all_done_status()
+
+
 @router.get("/images/{filename}")
 def get_image(
     filename: str,
@@ -300,14 +310,6 @@ def get_image_done_status(
     if done is None:
         raise HTTPException(status_code=404, detail="Image not found")
     return {"done": done}
-
-
-@router.get("/images/done-status", response_model=dict[str, bool])
-def get_all_done_status(
-    service: Annotated[AnnotationService, Depends(get_annotation_service)],
-) -> dict[str, bool]:
-    """Get done status for all images."""
-    return service.get_all_done_status()
 
 
 # Annotation endpoints
@@ -411,20 +413,25 @@ def _get_export_service_with_project(
 def export_yolo(
     header_project_id: Annotated[str | None, Depends(get_project_id_from_header)],
     project_id: Annotated[str | None, Query()] = None,
-    train_split: Annotated[float, Query(ge=0.1, le=0.98)] = 0.7,
-    val_split: Annotated[float, Query(ge=0.01, le=0.5)] = 0.2,
-    test_split: Annotated[float, Query(ge=0.0, le=0.5)] = 0.1,
+    train_split: Annotated[float, Query(ge=0.1, le=0.99)] = 0.8,
+    val_split: Annotated[float, Query(ge=0.01, le=0.9)] = 0.2,
+    shuffle: Annotated[bool, Query()] = True,
+    seed: Annotated[int, Query(ge=0)] = 42,
 ) -> FileResponse:
-    """Export annotations in YOLO format as a ZIP file."""
+    """Export annotations in YOLO format as a ZIP file.
+
+    Only exports images marked as 'done'. Creates train/val split only.
+    Test data should be provided separately.
+    """
     export_service = _get_export_service_with_project(project_id, header_project_id)
     # Validate splits sum to at most 1.0
-    total_split = train_split + val_split + test_split
+    total_split = train_split + val_split
     if total_split > 1.0:
         raise HTTPException(
             status_code=422,
             detail=f"Split values must sum to at most 1.0 (got {total_split:.2f})",
         )
-    zip_path = export_service.export_yolo_zip(train_split, val_split, test_split)
+    zip_path = export_service.export_yolo_zip(train_split, val_split, shuffle, seed)
     return FileResponse(
         zip_path,
         media_type="application/zip",

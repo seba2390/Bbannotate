@@ -235,17 +235,35 @@ class AnnotationService:
         return metadata.done
 
     def get_all_done_status(self) -> dict[str, bool]:
-        """Get done status for all images.
+        """Get done status for all images in the project.
+
+        Returns status for ALL images, not just those with annotation files.
+        Images without annotation files default to done=False.
 
         Returns:
             Dictionary mapping filename to done status.
         """
         result: dict[str, bool] = {}
+        # Get all images in the project
+        all_images = set(self.list_images())
+
+        # Load status from annotation files
         for annotation_file in self.annotations_dir.glob("*.json"):
-            with annotation_file.open("r") as f:
-                data = json.load(f)
-            metadata = ImageMetadata.model_validate(data)
-            result[metadata.image.filename] = metadata.done
+            try:
+                with annotation_file.open("r") as f:
+                    data = json.load(f)
+                metadata = ImageMetadata.model_validate(data)
+                if metadata.image.filename in all_images:
+                    result[metadata.image.filename] = metadata.done
+            except Exception:
+                # Skip corrupt annotation files
+                continue
+
+        # Ensure all images are included, default to False if no annotation file
+        for filename in all_images:
+            if filename not in result:
+                result[filename] = False
+
         return result
 
     def get_annotations(self, image_filename: str) -> list[Annotation]:

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-02-07
+
+### Added
+
+- Multi-select image deletion: checkbox mode for selecting multiple images and bulk deleting them
+- Enter key shortcut to mark current image as done (toggles done status)
+- Enter shortcut displayed in status bar
+- Select all checkbox in image list header
+
+### Changed
+
+- Export format selection: replaced radio button list with compact dropdown menu
+- Redesigned YOLO export: interactive slider showing all feasible train/val splits based on done image count
+- YOLO export now only exports images marked as "done" (previously exported all images)
+- Removed test split from YOLO export (now train/val only with default 80/20)
+- Added shuffle and seed support for YOLO export dataset randomization
+- Modern styled checkboxes with custom design replacing native browser checkboxes
+
+### Fixed
+
+- Fixed YOLO export showing 0 annotated images: ExportDialog now fetches count directly on open
+- Fixed done status not persisting when reopening a project (get_all_done_status now returns status for all images)
+- Fixed train/val split slider: tick marks now vertically centered on track, reduced slider handle size for better proportions
+- Fixed bounding box not being saved when user draws before defining labels: pending annotation is now saved with the first label after labels are created
+
 ## [1.0.5] - 2026-02-05
 
 ### Added
