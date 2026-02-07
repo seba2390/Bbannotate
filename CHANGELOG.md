@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Export format selection: replaced radio button list with compact dropdown menu
 - Redesigned YOLO export: interactive slider showing all feasible train/val splits based on done image count
 - YOLO export now only exports images marked as "done" (previously exported all images)
 - Removed test split from YOLO export (now train/val only with default 80/20)

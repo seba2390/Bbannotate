@@ -232,38 +232,31 @@ export function ExportDialog({ onClose }: ExportDialogProps): JSX.Element {
             exported.
           </p>
 
-          {/* Format selection */}
+          {/* Format selection dropdown */}
           <div className="space-y-2">
-            {EXPORT_FORMATS.map((format) => (
-              <label
-                key={format.id}
-                className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
-                  selectedFormat === format.id
-                    ? 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20'
-                    : 'border-gray-200 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700/50'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="format"
-                  value={format.id}
-                  checked={selectedFormat === format.id}
-                  onChange={() => setSelectedFormat(format.id)}
-                  className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500"
-                />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900 dark:text-white">{format.name}</span>
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                      {format.fileType}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                    {format.description}
-                  </p>
-                </div>
-              </label>
-            ))}
+            <label
+              htmlFor="export-format"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
+              Export Format
+            </label>
+            <select
+              id="export-format"
+              value={selectedFormat}
+              onChange={(e) => setSelectedFormat(e.target.value as ExportFormat)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-primary-400 dark:focus:ring-primary-400"
+            >
+              {EXPORT_FORMATS.map((format) => (
+                <option key={format.id} value={format.id}>
+                  {format.name} ({format.fileType})
+                </option>
+              ))}
+            </select>
+            {selectedFormatInfo && (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {selectedFormatInfo.description}
+              </p>
+            )}
           </div>
 
           {/* YOLO-specific options */}
