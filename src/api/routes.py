@@ -15,6 +15,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -26,8 +27,14 @@ from src.models.annotations import (
     ProjectInfo,
 )
 from src.services.annotation_service import AnnotationService
+from src.services.browser_session_service import BrowserSessionService
 from src.services.export_service import ExportService
-from src.services.project_service import Project, ProjectCreate, ProjectService
+from src.services.project_service import (
+    Project,
+    ProjectCreate,
+    ProjectRename,
+    ProjectService,
+)
 from src.utils import validate_path_in_directory
 
 router = APIRouter()
@@ -37,6 +44,12 @@ router = APIRouter()
 # Set high to support bulk imports of large image datasets
 _upload_rate_limit = os.environ.get("BBANNOTATE_UPLOAD_RATE_LIMIT", "1000/minute")
 limiter = Limiter(key_func=get_remote_address)
+
+
+class BrowserSessionPayload(BaseModel):
+    """Payload for browser session lifecycle signals."""
+
+    token: str
 
 
 def get_projects_dir() -> Path:
@@ -113,11 +126,53 @@ def get_export_service(
     return ExportService(annotation_service)
 
 
+def _get_browser_session_service(request: Request) -> BrowserSessionService | None:
+    """Get browser session service from app state if enabled."""
+    service = getattr(request.app.state, "browser_session_service", None)
+    if isinstance(service, BrowserSessionService):
+        return service
+    return None
+
+
 # Health check endpoint
 @router.get("/health")
 def health_check() -> dict[str, str]:
     """Health check endpoint for API availability."""
     return {"status": "healthy", "api": "ready"}
+
+
+@router.post("/session/heartbeat")
+def browser_session_heartbeat(
+    payload: BrowserSessionPayload,
+    request: Request,
+) -> dict[str, bool]:
+    """Receive browser heartbeat for detached-session lifecycle tracking."""
+    service = _get_browser_session_service(request)
+    if service is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Browser session lifecycle is disabled",
+        )
+    if not service.record_heartbeat(payload.token):
+        raise HTTPException(status_code=403, detail="Invalid browser session token")
+    return {"ok": True}
+
+
+@router.post("/session/close")
+def browser_session_close(
+    payload: BrowserSessionPayload,
+    request: Request,
+) -> dict[str, bool]:
+    """Receive browser-close signal and schedule process shutdown."""
+    service = _get_browser_session_service(request)
+    if service is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Browser session lifecycle is disabled",
+        )
+    if not service.record_close(payload.token):
+        raise HTTPException(status_code=403, detail="Invalid browser session token")
+    return {"ok": True}
 
 
 # Project management endpoints
@@ -160,6 +215,23 @@ def open_project(
     in subsequent requests via the X-Project-Id header.
     """
     project = service.open_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+@router.patch("/projects/{project_id}", response_model=Project)
+def rename_project(
+    project_id: str,
+    rename: ProjectRename,
+    service: Annotated[ProjectService, Depends(get_project_service)],
+) -> Project:
+    """Rename an existing project."""
+    try:
+        project = service.rename_project(project_id, rename.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project

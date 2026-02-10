@@ -1,5 +1,12 @@
 import { http, HttpResponse } from 'msw';
-import type { Annotation, AnnotationCreate, ImageInfo, Project, ProjectCreate } from '@/types';
+import type {
+  Annotation,
+  AnnotationCreate,
+  ImageInfo,
+  Project,
+  ProjectCreate,
+  ProjectRename,
+} from '@/types';
 
 // Mock data
 export const mockProjects: Project[] = [
@@ -50,6 +57,15 @@ export const mockProjectInfo = {
 let currentProjectId: string | null = null;
 
 export const handlers = [
+  // Browser session lifecycle endpoints
+  http.post('/api/session/heartbeat', () => {
+    return HttpResponse.json({ ok: true });
+  }),
+
+  http.post('/api/session/close', () => {
+    return HttpResponse.json({ ok: true });
+  }),
+
   // Project endpoints
   http.get('/api/projects', () => {
     return HttpResponse.json(mockProjects);
@@ -84,6 +100,19 @@ export const handlers = [
       return HttpResponse.json({ detail: 'Project not found' }, { status: 404 });
     }
     return HttpResponse.json(project);
+  }),
+
+  http.patch('/api/projects/:projectId', async ({ params, request }) => {
+    const { projectId } = params;
+    const body = (await request.json()) as ProjectRename;
+    const project = mockProjects.find((p) => p.id === projectId);
+    if (!project) {
+      return HttpResponse.json({ detail: 'Project not found' }, { status: 404 });
+    }
+    return HttpResponse.json({
+      ...project,
+      name: body.name,
+    });
   }),
 
   http.post('/api/projects/close', () => {

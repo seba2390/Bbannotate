@@ -1,8 +1,37 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as api from '@/lib/api';
 import { mockProjects, mockImages, mockAnnotations, mockProjectInfo } from '@/test/mocks/handlers';
 
 describe('API Client', () => {
+  describe('Browser Session', () => {
+    it('should send browser session heartbeat', async () => {
+      await expect(api.sendBrowserSessionHeartbeat('session-token')).resolves.not.toThrow();
+    });
+
+    it('should use sendBeacon when available for close signal', () => {
+      const originalDescriptor = Object.getOwnPropertyDescriptor(navigator, 'sendBeacon');
+      const sendBeacon = vi.fn().mockReturnValue(true);
+      Object.defineProperty(navigator, 'sendBeacon', {
+        configurable: true,
+        value: sendBeacon,
+      });
+
+      api.sendBrowserSessionClose('session-token');
+
+      expect(sendBeacon).toHaveBeenCalledTimes(1);
+      expect(sendBeacon).toHaveBeenCalledWith('/api/session/close', expect.any(Blob));
+
+      if (originalDescriptor) {
+        Object.defineProperty(navigator, 'sendBeacon', originalDescriptor);
+      } else {
+        Object.defineProperty(navigator, 'sendBeacon', {
+          configurable: true,
+          value: undefined,
+        });
+      }
+    });
+  });
+
   describe('Project Management', () => {
     it('should list all projects', async () => {
       const projects = await api.listProjects();
@@ -37,6 +66,12 @@ describe('API Client', () => {
 
     it('should delete a project', async () => {
       await expect(api.deleteProject('project-1')).resolves.not.toThrow();
+    });
+
+    it('should rename a project', async () => {
+      const updated = await api.renameProject('project-1', { name: 'Renamed Project' });
+      expect(updated.id).toBe('project-1');
+      expect(updated.name).toBe('Renamed Project');
     });
   });
 

@@ -55,6 +55,7 @@ class TestHelpCommand:
         assert result.exit_code == 0
         assert "Bounding box annotation tool" in result.output
         assert "start" in result.output
+        assert "status" in result.output
         assert "build-frontend" in result.output
         assert "info" in result.output
 
@@ -84,42 +85,54 @@ class TestStartCommand:
         assert "--data-dir" in clean_output
         assert "--projects-dir" in clean_output
 
-    @patch("uvicorn.run")
+    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_default_options(
         self,
         mock_webbrowser: MagicMock,
-        mock_uvicorn: MagicMock,
+        mock_start_detached: MagicMock,
+        mock_wait_ready: MagicMock,
         runner: CliRunner,
     ) -> None:
-        """Test start command with default options."""
+        """Test start command launches detached server by default."""
+        mock_process = MagicMock(pid=4242)
+        mock_start_detached.return_value = mock_process
         runner.invoke(app, ["start", "--no-browser"])
-        # Note: The command will try to start uvicorn
-        mock_uvicorn.assert_called_once_with(
-            "src.main:app",
-            host="127.0.0.1",
-            port=8000,
-            reload=False,
+        mock_start_detached.assert_called_once()
+        args, kwargs = mock_start_detached.call_args
+        assert args[0] == "127.0.0.1"
+        assert args[1] == 8000
+        env = args[2]
+        assert "BBANNOTATE_SESSION_TOKEN" not in env
+        mock_wait_ready.assert_called_once_with(
+            "http://127.0.0.1:8000",
+            timeout_seconds=15.0,
         )
         mock_webbrowser.assert_not_called()
 
-    @patch("uvicorn.run")
+    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_custom_host_port(
         self,
         mock_webbrowser: MagicMock,
-        mock_uvicorn: MagicMock,
+        mock_start_detached: MagicMock,
+        mock_wait_ready: MagicMock,
         runner: CliRunner,
     ) -> None:
         """Test start command with custom host and port."""
+        mock_start_detached.return_value = MagicMock(pid=9999)
         runner.invoke(
             app, ["start", "--host", "0.0.0.0", "--port", "9000", "--no-browser"]
         )
-        mock_uvicorn.assert_called_once_with(
-            "src.main:app",
-            host="0.0.0.0",
-            port=9000,
-            reload=False,
+        mock_start_detached.assert_called_once()
+        args, kwargs = mock_start_detached.call_args
+        assert args[0] == "0.0.0.0"
+        assert args[1] == 9000
+        mock_wait_ready.assert_called_once_with(
+            "http://0.0.0.0:9000",
+            timeout_seconds=15.0,
         )
 
     @patch("uvicorn.run")
@@ -139,78 +152,95 @@ class TestStartCommand:
             reload=True,
         )
 
-    @patch("uvicorn.run")
-    @patch("urllib.request.urlopen")
+    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_opens_browser_by_default(
         self,
         mock_webbrowser: MagicMock,
-        mock_urlopen: MagicMock,
-        mock_uvicorn: MagicMock,
+        mock_start_detached: MagicMock,
+        mock_wait_ready: MagicMock,
         runner: CliRunner,
     ) -> None:
         """Test start command opens browser by default."""
-        import time
-
-        # Mock health check to succeed immediately
-        mock_urlopen.return_value.__enter__ = MagicMock()
-        mock_urlopen.return_value.__exit__ = MagicMock()
+        mock_start_detached.return_value = MagicMock(pid=4321)
 
         runner.invoke(app, ["start"])
 
-        # Give the background thread time to run
-        time.sleep(0.2)
-        mock_webbrowser.assert_called_once_with("http://127.0.0.1:8000")
+        mock_wait_ready.assert_called_once_with(
+            "http://127.0.0.1:8000",
+            timeout_seconds=15.0,
+        )
+        mock_webbrowser.assert_called_once()
+        opened_url = mock_webbrowser.call_args.args[0]
+        assert opened_url.startswith("http://127.0.0.1:8000?bb_session=")
 
-    @patch("uvicorn.run")
+    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_no_browser_flag(
         self,
         mock_webbrowser: MagicMock,
-        mock_uvicorn: MagicMock,
+        mock_start_detached: MagicMock,
+        mock_wait_ready: MagicMock,
         runner: CliRunner,
     ) -> None:
         """Test start command with --no-browser flag."""
+        mock_start_detached.return_value = MagicMock(pid=1010)
         runner.invoke(app, ["start", "--no-browser"])
+        mock_wait_ready.assert_called_once_with(
+            "http://127.0.0.1:8000",
+            timeout_seconds=15.0,
+        )
         mock_webbrowser.assert_not_called()
 
-    @patch("uvicorn.run")
+    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_sets_data_dir_env(
         self,
         mock_webbrowser: MagicMock,
-        mock_uvicorn: MagicMock,
+        mock_start_detached: MagicMock,
+        mock_wait_ready: MagicMock,
         runner: CliRunner,
         temp_dir: Path,
     ) -> None:
-        """Test start command sets BBANNOTATE_DATA_DIR env variable."""
+        """Test start command passes BBANNOTATE_DATA_DIR to detached process."""
         data_dir = temp_dir / "custom_data"
         data_dir.mkdir()
+        mock_start_detached.return_value = MagicMock(pid=777)
 
         with patch.dict(os.environ, {}, clear=False):
             runner.invoke(app, ["start", "--data-dir", str(data_dir), "--no-browser"])
-            # The env variable should have been set
-            assert "BBANNOTATE_DATA_DIR" in os.environ
+            mock_start_detached.assert_called_once()
+            args, kwargs = mock_start_detached.call_args
+            env = args[2]
+            assert env["BBANNOTATE_DATA_DIR"] == str(data_dir.resolve())
 
-    @patch("uvicorn.run")
+    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_sets_projects_dir_env(
         self,
         mock_webbrowser: MagicMock,
-        mock_uvicorn: MagicMock,
+        mock_start_detached: MagicMock,
+        mock_wait_ready: MagicMock,
         runner: CliRunner,
         temp_dir: Path,
     ) -> None:
-        """Test start command sets BBANNOTATE_PROJECTS_DIR env variable."""
+        """Test start command passes BBANNOTATE_PROJECTS_DIR to detached process."""
         projects_dir = temp_dir / "custom_projects"
         projects_dir.mkdir()
+        mock_start_detached.return_value = MagicMock(pid=555)
 
         with patch.dict(os.environ, {}, clear=False):
             runner.invoke(
                 app, ["start", "--projects-dir", str(projects_dir), "--no-browser"]
             )
-            # The env variable should have been set
-            assert "BBANNOTATE_PROJECTS_DIR" in os.environ
+            mock_start_detached.assert_called_once()
+            args, kwargs = mock_start_detached.call_args
+            env = args[2]
+            assert env["BBANNOTATE_PROJECTS_DIR"] == str(projects_dir.resolve())
 
 
 class TestInfoCommand:
@@ -234,6 +264,71 @@ class TestInfoCommand:
         result = runner.invoke(app, ["info"])
         assert result.exit_code == 0
         assert "Frontend" in result.output
+
+
+class TestStatusCommand:
+    """Tests for the status command."""
+
+    def test_status_help(self, runner: CliRunner) -> None:
+        """Test status command help."""
+        result = runner.invoke(app, ["status", "--help"])
+        assert result.exit_code == 0
+        assert "Show current bbannotate runtime status" in result.output
+
+    @patch("src.cli._find_frontend_processes", return_value=[])
+    @patch("src.cli._find_backend_processes", return_value=[])
+    @patch("src.cli._list_running_processes", return_value=[])
+    @patch("src.cli._check_api_health", return_value=False)
+    @patch("src.cli._is_tcp_port_open", return_value=False)
+    def test_status_reports_stopped_services(
+        self,
+        mock_is_tcp_port_open: MagicMock,
+        mock_check_api_health: MagicMock,
+        mock_list_running_processes: MagicMock,
+        mock_find_backend_processes: MagicMock,
+        mock_find_frontend_processes: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        """Status should report stopped when nothing is running."""
+        result = runner.invoke(app, ["status"])
+        assert result.exit_code == 0
+        assert "Backend API" in result.output
+        assert "Frontend Dev" in result.output
+        assert "stopped" in result.output
+
+    @patch("src.cli._find_frontend_processes")
+    @patch("src.cli._find_backend_processes")
+    @patch("src.cli._list_running_processes")
+    @patch("src.cli._check_api_health", return_value=True)
+    @patch("src.cli._is_tcp_port_open")
+    def test_status_reports_running_services(
+        self,
+        mock_is_tcp_port_open: MagicMock,
+        mock_check_api_health: MagicMock,
+        mock_list_running_processes: MagicMock,
+        mock_find_backend_processes: MagicMock,
+        mock_find_frontend_processes: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        """Status should report running and show detected processes."""
+        mock_is_tcp_port_open.side_effect = [True, True]  # backend port, frontend port
+        mock_list_running_processes.return_value = [
+            (1234, "python -m uvicorn src.main:app --host 127.0.0.1 --port 8000"),
+            (5678, "node ./node_modules/vite/bin/vite.js"),
+        ]
+        mock_find_backend_processes.return_value = [
+            (1234, "python -m uvicorn src.main:app --host 127.0.0.1 --port 8000")
+        ]
+        mock_find_frontend_processes.return_value = [
+            (5678, "node ./node_modules/vite/bin/vite.js")
+        ]
+
+        result = runner.invoke(app, ["status"])
+        assert result.exit_code == 0
+        assert "running" in result.output
+        assert "Detected Processes" in result.output
+        assert "1234" in result.output
+        assert "5678" in result.output
 
 
 class TestBuildFrontendCommand:

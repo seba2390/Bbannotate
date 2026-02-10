@@ -19,11 +19,15 @@ import {
   closeProject,
   markImageDone,
   getAllDoneStatus,
+  sendBrowserSessionHeartbeat,
+  sendBrowserSessionClose,
 } from '@/lib/api';
-import type { ToolMode, DrawingRect, BoundingBox, Project } from '@/types';
+import type { ToolMode, DrawingRect, BoundingBox, Project, BoundingBoxColorMode } from '@/types';
 
 /** Default labels - empty so users define their own */
 const DEFAULT_LABELS: string[] = [];
+const DEFAULT_CUSTOM_BBOX_COLOR = '#22c55e';
+const BROWSER_SESSION_HEARTBEAT_MS = 2500;
 
 /** Get the localStorage key for a project's labels */
 function getLabelsKey(projectName: string | null): string {
@@ -64,6 +68,19 @@ function saveLabelsForProject(projectName: string | null, labels: string[]): voi
 function App(): JSX.Element {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>('draw');
+  const [bboxColorMode, setBboxColorMode] = useState<BoundingBoxColorMode>(() => {
+    if (typeof window === 'undefined') return 'auto';
+    const saved = localStorage.getItem('bboxColorMode');
+    if (saved === 'label' || saved === 'auto' || saved === 'custom') {
+      return saved;
+    }
+    return 'auto';
+  });
+  const [customBboxColor, setCustomBboxColor] = useState<string>(() => {
+    if (typeof window === 'undefined') return DEFAULT_CUSTOM_BBOX_COLOR;
+    const saved = localStorage.getItem('customBboxColor');
+    return saved ?? DEFAULT_CUSTOM_BBOX_COLOR;
+  });
   const [labels, setLabels] = useState<string[]>(DEFAULT_LABELS);
   const [currentLabel, setCurrentLabel] = useState<string>('');
   const [showLabelManager, setShowLabelManager] = useState(false);
@@ -181,6 +198,45 @@ function App(): JSX.Element {
       localStorage.setItem('darkMode', 'false');
     }
   }, [darkMode]);
+
+  // Persist bounding box color preferences
+  useEffect(() => {
+    localStorage.setItem('bboxColorMode', bboxColorMode);
+  }, [bboxColorMode]);
+
+  useEffect(() => {
+    localStorage.setItem('customBboxColor', customBboxColor);
+  }, [customBboxColor]);
+
+  // Keep detached server alive while browser session is active
+  useEffect(() => {
+    const sessionToken = new URLSearchParams(window.location.search).get('bb_session');
+    if (!sessionToken) {
+      return;
+    }
+
+    const sendHeartbeat = (): void => {
+      void sendBrowserSessionHeartbeat(sessionToken).catch(() => {
+        // Best-effort lifecycle signal - safe to ignore transient failures
+      });
+    };
+
+    const handleCloseSignal = (): void => {
+      sendBrowserSessionClose(sessionToken);
+    };
+
+    sendHeartbeat();
+    const intervalId = window.setInterval(sendHeartbeat, BROWSER_SESSION_HEARTBEAT_MS);
+    window.addEventListener('pagehide', handleCloseSignal);
+    window.addEventListener('beforeunload', handleCloseSignal);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('pagehide', handleCloseSignal);
+      window.removeEventListener('beforeunload', handleCloseSignal);
+      handleCloseSignal();
+    };
+  }, []);
 
   // Show errors from hooks as toasts
   useEffect(() => {
@@ -630,6 +686,8 @@ function App(): JSX.Element {
             annotations={annotations}
             selectedId={selectedId}
             toolMode={toolMode}
+            bboxColorMode={bboxColorMode}
+            customBboxColor={customBboxColor}
             currentLabel={currentLabel}
             currentClassId={labels.indexOf(currentLabel)}
             labels={labels}
@@ -639,6 +697,8 @@ function App(): JSX.Element {
             onUpdateBbox={handleUpdateBbox}
             onDeleteAnnotation={handleDeleteAnnotation}
             onToolModeChange={setToolMode}
+            onBboxColorModeChange={setBboxColorMode}
+            onCustomBboxColorChange={setCustomBboxColor}
             onMarkDone={handleMarkDone}
             onLabelChange={setCurrentLabel}
           />

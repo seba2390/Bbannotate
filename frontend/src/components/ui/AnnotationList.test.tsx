@@ -68,9 +68,9 @@ describe('AnnotationList', () => {
   it('should highlight selected annotation', () => {
     const { container } = render(<AnnotationList {...defaultProps} selectedId="ann-2" />);
 
-    // The selected annotation should have ring-2 class
-    const items = container.querySelectorAll('[class*="ring-2"]');
-    expect(items).toHaveLength(1);
+    const selectedItem = container.querySelector('[aria-selected="true"]');
+    expect(selectedItem).not.toBeNull();
+    expect(selectedItem?.className).toContain('ring-2');
   });
 
   it('should render color indicators for each annotation', () => {
