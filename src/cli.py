@@ -1,10 +1,16 @@
 """Command-line interface for bbannotate."""
 
+import os
+import secrets
 import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import webbrowser
+from contextlib import suppress
 from pathlib import Path
 from typing import Annotated
 
@@ -48,6 +54,83 @@ def main_callback(
     pass
 
 
+def _configure_environment(
+    data_dir: Path | None,
+    projects_dir: Path | None,
+    session_token: str | None = None,
+) -> dict[str, str]:
+    """Build environment variables for server process startup."""
+    env = os.environ.copy()
+    if data_dir:
+        env["BBANNOTATE_DATA_DIR"] = str(data_dir.resolve())
+    if projects_dir:
+        env["BBANNOTATE_PROJECTS_DIR"] = str(projects_dir.resolve())
+    if session_token:
+        env["BBANNOTATE_SESSION_TOKEN"] = session_token
+    return env
+
+
+def _wait_for_server_ready(url: str, timeout_seconds: float = 12.0) -> bool:
+    """Poll health endpoint until server responds or timeout is reached."""
+    health_url = f"{url}/api/health"
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(health_url, timeout=0.5):
+                return True
+        except (urllib.error.URLError, TimeoutError, OSError):
+            time.sleep(0.1)
+    return False
+
+
+def _open_browser_after_ready(server_url: str, browser_url: str) -> None:
+    """Open browser once server is healthy, with fallback after timeout."""
+    if _wait_for_server_ready(server_url):
+        webbrowser.open(browser_url)
+        return
+    webbrowser.open(browser_url)
+
+
+def _start_detached_server(
+    host: str,
+    port: int,
+    env: dict[str, str],
+) -> subprocess.Popen:
+    """Start uvicorn in a detached subprocess that survives terminal close."""
+    command = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "src.main:app",
+        "--host",
+        host,
+        "--port",
+        str(port),
+    ]
+
+    if os.name == "nt":
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
+            subprocess, "DETACHED_PROCESS", 0
+        )
+        return subprocess.Popen(
+            command,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
+
+    return subprocess.Popen(
+        command,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
 @app.command()
 def start(
     host: Annotated[
@@ -87,14 +170,6 @@ def start(
     Launches the FastAPI backend server and optionally opens a browser.
     The frontend is served from the built assets if available.
     """
-    import os
-
-    # Set environment variables for configuration
-    if data_dir:
-        os.environ["BBANNOTATE_DATA_DIR"] = str(data_dir.resolve())
-    if projects_dir:
-        os.environ["BBANNOTATE_PROJECTS_DIR"] = str(projects_dir.resolve())
-
     # Check if frontend is built
     frontend_dist = find_frontend_dist()
     if frontend_dist is None:
@@ -111,6 +186,11 @@ def start(
         )
 
     url = f"http://{host}:{port}"
+    detached_mode = not reload
+    browser_session_token = (
+        secrets.token_urlsafe(24) if detached_mode and not no_browser else None
+    )
+    env = _configure_environment(data_dir, projects_dir, browser_session_token)
 
     console.print(
         Panel(
@@ -118,53 +198,54 @@ def start(
             f"  URL: [link={url}]{url}[/link]\n"
             f"  Host: {host}\n"
             f"  Port: {port}\n"
-            f"  Reload: {'enabled' if reload else 'disabled'}",
+            f"  Reload: {'enabled' if reload else 'disabled'}\n"
+            f"  Detached: {'enabled' if detached_mode else 'disabled'}",
             title="🚀 Bbannotate",
             border_style="blue",
         )
     )
 
-    # Open browser after server is ready (in background thread with loading animation)
+    if detached_mode:
+        process = _start_detached_server(host, port, env)
+        if not _wait_for_server_ready(url, timeout_seconds=15.0):
+            with suppress(ProcessLookupError):
+                process.terminate()
+            console.print(
+                "[red]Failed to start server in detached mode.[/red] "
+                "Please check whether the port is already in use."
+            )
+            raise typer.Exit(1)
+
+        console.print(
+            f"[green]✓[/green] Server started in background (PID: {process.pid})"
+        )
+
+        if not no_browser:
+            browser_url = url
+            if browser_session_token:
+                encoded = urllib.parse.quote(browser_session_token, safe="")
+                browser_url = f"{url}?bb_session={encoded}"
+            webbrowser.open(browser_url)
+            console.print(
+                "[cyan]Browser session linked to server lifecycle.[/cyan] "
+                "Closing the browser window will stop the background server."
+            )
+        else:
+            console.print(
+                "[yellow]Browser auto-open disabled.[/yellow] "
+                "Server will continue running until manually stopped."
+            )
+        return
+
+    # Foreground mode is reserved for dev reload workflow.
+    os.environ.update(env)
     if not no_browser:
-        server_ready = threading.Event()
+        threading.Thread(
+            target=_open_browser_after_ready,
+            args=(url, url),
+            daemon=True,
+        ).start()
 
-        def open_browser_when_ready() -> None:
-            """Wait for server to be ready, then open browser."""
-            import urllib.error
-            import urllib.request
-
-            health_url = f"{url}/api/health"
-            max_attempts = 50  # 5 seconds max wait
-            for _ in range(max_attempts):
-                try:
-                    with urllib.request.urlopen(health_url, timeout=0.5):
-                        server_ready.set()
-                        webbrowser.open(url)
-                        return
-                except (urllib.error.URLError, TimeoutError, OSError):
-                    time.sleep(0.1)
-            # Fallback: open anyway after timeout
-            server_ready.set()
-            webbrowser.open(url)
-
-        def show_loading_spinner() -> None:
-            """Show a loading spinner until server is ready."""
-            from rich.live import Live
-            from rich.spinner import Spinner
-            from rich.text import Text
-
-            spinner = Spinner("dots", text=Text(" Waiting for server...", style="cyan"))
-            with Live(spinner, console=console, refresh_per_second=10, transient=True):
-                while not server_ready.wait(timeout=0.1):
-                    pass
-            console.print("[green]✓[/green] Server ready!")
-
-        browser_thread = threading.Thread(target=open_browser_when_ready, daemon=True)
-        spinner_thread = threading.Thread(target=show_loading_spinner, daemon=True)
-        browser_thread.start()
-        spinner_thread.start()
-
-    # Start uvicorn (blocking)
     import uvicorn
 
     uvicorn.run(

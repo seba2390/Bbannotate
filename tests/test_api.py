@@ -68,6 +68,53 @@ class TestHealthEndpoint:
         assert data["status"] == "healthy"
 
 
+class TestBrowserSessionEndpoints:
+    """Tests for detached browser session lifecycle endpoints."""
+
+    def test_session_heartbeat_disabled_returns_404(self, client: TestClient) -> None:
+        """Heartbeat should be unavailable when session lifecycle is disabled."""
+        response = client.post("/api/session/heartbeat", json={"token": "test-token"})
+        assert response.status_code == 404
+
+    def test_session_heartbeat_accepts_valid_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Heartbeat succeeds when token matches configured detached session."""
+        token = "test-browser-session-token"
+        monkeypatch.setenv("BBANNOTATE_SESSION_TOKEN", token)
+        with TestClient(app) as token_client:
+            response = token_client.post(
+                "/api/session/heartbeat",
+                json={"token": token},
+            )
+            assert response.status_code == 200
+            assert response.json()["ok"] is True
+
+    def test_session_heartbeat_rejects_invalid_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Heartbeat should reject requests with invalid token."""
+        monkeypatch.setenv("BBANNOTATE_SESSION_TOKEN", "expected-token")
+        with TestClient(app) as token_client:
+            response = token_client.post(
+                "/api/session/heartbeat",
+                json={"token": "wrong-token"},
+            )
+            assert response.status_code == 403
+
+    def test_session_close_rejects_invalid_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Close endpoint should reject invalid session token."""
+        monkeypatch.setenv("BBANNOTATE_SESSION_TOKEN", "expected-token")
+        with TestClient(app) as token_client:
+            response = token_client.post(
+                "/api/session/close",
+                json={"token": "wrong-token"},
+            )
+            assert response.status_code == 403
+
+
 class TestProjectEndpoints:
     """Tests for project-level endpoints."""
 
@@ -102,6 +149,56 @@ class TestProjectEndpoints:
         assert data["image_count"] == 1
         assert data["annotation_count"] == 1
         assert "product" in data["labels"]
+
+
+class TestProjectManagementEndpoints:
+    """Tests for project management endpoints."""
+
+    def test_rename_project(self, client: TestClient, temp_data_dir: Path) -> None:
+        """Test renaming an existing project."""
+        create_response = client.post("/api/projects", json={"name": "Old Name"})
+        assert create_response.status_code == 200
+        project_id = create_response.json()["id"]
+
+        rename_response = client.patch(
+            f"/api/projects/{project_id}",
+            json={"name": "New Name"},
+        )
+        assert rename_response.status_code == 200
+        renamed = rename_response.json()
+        assert renamed["id"] == project_id
+        assert renamed["name"] == "New Name"
+
+        list_response = client.get("/api/projects")
+        assert list_response.status_code == 200
+        projects = list_response.json()
+        assert any(p["id"] == project_id and p["name"] == "New Name" for p in projects)
+
+    def test_rename_project_not_found(
+        self, client: TestClient, temp_data_dir: Path
+    ) -> None:
+        """Test renaming a non-existent project returns 404."""
+        response = client.patch(
+            "/api/projects/nonexistent",
+            json={"name": "New Name"},
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Project not found"
+
+    def test_rename_project_whitespace_name_returns_400(
+        self, client: TestClient, temp_data_dir: Path
+    ) -> None:
+        """Test renaming with whitespace-only name returns 400."""
+        create_response = client.post("/api/projects", json={"name": "Original"})
+        assert create_response.status_code == 200
+        project_id = create_response.json()["id"]
+
+        response = client.patch(
+            f"/api/projects/{project_id}",
+            json={"name": "   "},
+        )
+        assert response.status_code == 400
+        assert "cannot be empty" in response.json()["detail"].lower()
 
 
 class TestImageEndpoints:

@@ -60,6 +60,11 @@ export interface ProjectCreate {
   name: string;
 }
 
+/** Request to rename a project */
+export interface ProjectRename {
+  name: string;
+}
+
 /** Rectangle for drawing (pixel coordinates) */
 export interface DrawingRect {
   x: number;
@@ -70,3 +75,6 @@ export interface DrawingRect {
 
 /** Tool modes for the canvas */
 export type ToolMode = 'select' | 'draw' | 'pan';
+
+/** Color rendering modes for annotation bounding boxes */
+export type BoundingBoxColorMode = 'label' | 'auto' | 'custom';

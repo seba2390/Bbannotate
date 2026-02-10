@@ -6,6 +6,7 @@ import type {
   ImageInfo,
   Project,
   ProjectCreate,
+  ProjectRename,
   ProjectInfo,
 } from '@/types';
 
@@ -28,6 +29,35 @@ export function setCurrentProjectId(projectId: string | null): void {
   } else {
     delete api.defaults.headers.common['X-Project-Id'];
   }
+}
+
+/** Browser session lifecycle API */
+interface BrowserSessionPayload {
+  token: string;
+}
+
+export async function sendBrowserSessionHeartbeat(token: string): Promise<void> {
+  const payload: BrowserSessionPayload = { token };
+  await api.post('/session/heartbeat', payload);
+}
+
+export function sendBrowserSessionClose(token: string): void {
+  const payload: BrowserSessionPayload = { token };
+  const body = JSON.stringify(payload);
+  const closeUrl = '/api/session/close';
+
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    const blob = new Blob([body], { type: 'application/json' });
+    navigator.sendBeacon(closeUrl, blob);
+    return;
+  }
+
+  void fetch(closeUrl, {
+    method: 'POST',
+    body,
+    headers: { 'Content-Type': 'application/json' },
+    keepalive: true,
+  });
 }
 
 /** Project Management API */
@@ -61,6 +91,11 @@ export async function closeProject(): Promise<void> {
 
 export async function deleteProject(projectId: string): Promise<void> {
   await api.delete(`/projects/${encodeURIComponent(projectId)}`);
+}
+
+export async function renameProject(projectId: string, rename: ProjectRename): Promise<Project> {
+  const response = await api.patch<Project>(`/projects/${encodeURIComponent(projectId)}`, rename);
+  return response.data;
 }
 
 /** Project Info API */

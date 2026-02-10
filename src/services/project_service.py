@@ -27,6 +27,12 @@ class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Project name")
 
 
+class ProjectRename(BaseModel):
+    """Request model for renaming a project."""
+
+    name: str = Field(..., min_length=1, max_length=100, description="New project name")
+
+
 class ProjectService:
     """Handles project storage and management."""
 
@@ -170,6 +176,43 @@ class ProjectService:
 
         # Update last_opened
         project.last_opened = datetime.now().isoformat()
+        image_count, annotation_count = self._count_project_stats(project_id)
+        project.image_count = image_count
+        project.annotation_count = annotation_count
+
+        self._save_project_meta(project)
+        return project
+
+    def rename_project(self, project_id: str, new_name: str) -> Project | None:
+        """Rename an existing project.
+
+        Args:
+            project_id: Project identifier.
+            new_name: New human-readable project name.
+
+        Returns:
+            Updated project if found, None otherwise.
+
+        Raises:
+            ValueError: If name is empty after trimming or if path is invalid.
+        """
+        cleaned_name = new_name.strip()
+        if not cleaned_name:
+            raise ValueError("Project name cannot be empty")
+
+        project_dir = self._get_project_dir(project_id)
+        if not project_dir.exists():
+            return None
+
+        # Security: Validate path stays within base_dir to prevent path traversal
+        if not validate_path_in_directory(project_dir, self.base_dir):
+            raise ValueError(f"Invalid project path: {project_id}")
+
+        project = self._load_project_meta(project_id)
+        if not project:
+            return None
+
+        project.name = cleaned_name
         image_count, annotation_count = self._count_project_stats(project_id)
         project.image_count = image_count
         project.annotation_count = annotation_count

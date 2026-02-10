@@ -33,13 +33,23 @@ export function AnnotationList({
           <div
             key={ann.id}
             className={`
-              group flex cursor-pointer items-center gap-2 rounded-lg p-2 transition-colors
-              ${selectedId === ann.id ? 'bg-gray-100 ring-2 dark:bg-gray-700' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}
+              group flex cursor-pointer items-center gap-2 rounded-lg p-2 transition-all
+              ${
+                selectedId === ann.id
+                  ? 'bg-gradient-to-r from-white to-primary-50 ring-2 shadow-sm dark:from-gray-700 dark:to-primary-900/30'
+                  : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+              }
             `}
             style={{ '--tw-ring-color': color } as React.CSSProperties}
             onClick={() => onSelectAnnotation(ann.id)}
+            aria-selected={selectedId === ann.id}
           >
-            <div className="h-4 w-4 flex-shrink-0 rounded" style={{ backgroundColor: color }} />
+            <div
+              className={`h-4 w-4 flex-shrink-0 rounded ${
+                selectedId === ann.id ? 'ring-2 ring-white dark:ring-gray-900' : ''
+              }`}
+              style={{ backgroundColor: color }}
+            />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                 {index + 1}. {ann.label}

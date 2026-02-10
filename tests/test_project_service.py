@@ -108,6 +108,36 @@ class TestProjectService:
         success = service.delete_project("nonexistent")
         assert success is False
 
+    def test_rename_project(self, service: ProjectService) -> None:
+        """Test renaming an existing project."""
+        created = service.create_project(ProjectCreate(name="Old Name"))
+
+        renamed = service.rename_project(created.id, "New Name")
+        assert renamed is not None
+        assert renamed.id == created.id
+        assert renamed.name == "New Name"
+
+        fetched = service.get_project(created.id)
+        assert fetched is not None
+        assert fetched.name == "New Name"
+
+    def test_rename_project_not_found(self, service: ProjectService) -> None:
+        """Test renaming a non-existent project."""
+        result = service.rename_project("nonexistent", "Renamed")
+        assert result is None
+
+    def test_rename_project_empty_name_fails(self, service: ProjectService) -> None:
+        """Test renaming with empty/whitespace-only name fails."""
+        created = service.create_project(ProjectCreate(name="Original"))
+
+        with pytest.raises(ValueError, match="cannot be empty"):
+            service.rename_project(created.id, "   ")
+
+    def test_rename_project_path_traversal_fails(self, service: ProjectService) -> None:
+        """Test renaming with path traversal project ID is rejected."""
+        with pytest.raises(ValueError, match="Invalid project path"):
+            service.rename_project("..", "Renamed")
+
     def test_get_project_data_dir(self, service: ProjectService) -> None:
         """Test getting project data directory."""
         created = service.create_project(ProjectCreate(name="Test"))

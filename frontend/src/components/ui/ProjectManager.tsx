@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Project } from '@/types';
-import { listProjects, createProject, deleteProject, openProject } from '@/lib/api';
+import { listProjects, createProject, deleteProject, openProject, renameProject } from '@/lib/api';
 import { ConfirmDialog } from './ConfirmDialog';
 
 interface ProjectManagerProps {
@@ -14,9 +14,12 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [renameProjectName, setRenameProjectName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [projectToRename, setProjectToRename] = useState<Project | null>(null);
 
   const loadProjects = useCallback(async (): Promise<void> => {
     try {
@@ -64,6 +67,44 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
   const handleDeleteProject = async (project: Project): Promise<void> => {
     setProjectToDelete(project);
   };
+
+  const handleRenameProject = (project: Project): void => {
+    setProjectToRename(project);
+    setRenameProjectName(project.name);
+  };
+
+  const closeRenameDialog = useCallback((): void => {
+    if (renaming) return;
+    setProjectToRename(null);
+    setRenameProjectName('');
+  }, [renaming]);
+
+  const confirmRenameProject = useCallback(async (): Promise<void> => {
+    if (!projectToRename) return;
+
+    const trimmed = renameProjectName.trim();
+    if (!trimmed) {
+      setError('Project name cannot be empty');
+      return;
+    }
+
+    if (trimmed === projectToRename.name) {
+      closeRenameDialog();
+      return;
+    }
+
+    try {
+      setRenaming(true);
+      await renameProject(projectToRename.id, { name: trimmed });
+      await loadProjects();
+      setProjectToRename(null);
+      setRenameProjectName('');
+    } catch {
+      setError('Failed to rename project');
+    } finally {
+      setRenaming(false);
+    }
+  }, [projectToRename, renameProjectName, closeRenameDialog, loadProjects]);
 
   const confirmDeleteProject = async (): Promise<void> => {
     if (!projectToDelete) return;
@@ -188,6 +229,25 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
                       </div>
                     </button>
                     <button
+                      onClick={() => handleRenameProject(project)}
+                      className="ml-2 rounded p-2 text-gray-400 hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-primary-900/20 dark:hover:text-primary-400"
+                      title="Rename project"
+                    >
+                      <svg
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L12 15l-4 1 1-4 8.586-8.586z"
+                        />
+                      </svg>
+                    </button>
+                    <button
                       onClick={() => handleDeleteProject(project)}
                       className="ml-2 rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
                       title="Delete project"
@@ -213,6 +273,75 @@ export function ProjectManager({ onOpenProject }: ProjectManagerProps): JSX.Elem
           )}
         </div>
       </div>
+
+      {/* Rename project dialog */}
+      {projectToRename && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={closeRenameDialog}
+        >
+          <div
+            className="w-full max-w-md rounded-xl bg-white shadow-2xl dark:bg-gray-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Rename Project
+              </h2>
+              <button
+                onClick={closeRenameDialog}
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+                disabled={renaming}
+                title="Close"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              <label
+                htmlFor="rename-project-name"
+                className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
+                Project name
+              </label>
+              <input
+                id="rename-project-name"
+                type="text"
+                value={renameProjectName}
+                onChange={(e) => setRenameProjectName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && void confirmRenameProject()}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                maxLength={100}
+                autoFocus
+                disabled={renaming}
+              />
+            </div>
+            <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+              <button
+                onClick={closeRenameDialog}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                disabled={renaming}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmRenameProject()}
+                className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                disabled={renaming || !renameProjectName.trim()}
+              >
+                {renaming ? 'Renaming...' : 'Rename'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation dialog */}
       <ConfirmDialog
