@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from src import __version__
 from src.cli import (
     _find_frontend_src,
+    _list_running_processes,
     app,
 )
 from src.utils import find_frontend_dist
@@ -85,14 +86,16 @@ class TestStartCommand:
         assert "--data-dir" in clean_output
         assert "--projects-dir" in clean_output
 
-    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._wait_for_server_ready_or_exit", return_value=(True, None))
+    @patch("src.cli._is_tcp_port_open", return_value=False)
     @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_default_options(
         self,
         mock_webbrowser: MagicMock,
         mock_start_detached: MagicMock,
-        mock_wait_ready: MagicMock,
+        mock_is_tcp_port_open: MagicMock,
+        mock_wait_ready_or_exit: MagicMock,
         runner: CliRunner,
     ) -> None:
         """Test start command launches detached server by default."""
@@ -105,20 +108,25 @@ class TestStartCommand:
         assert args[1] == 8000
         env = args[2]
         assert "BBANNOTATE_SESSION_TOKEN" not in env
-        mock_wait_ready.assert_called_once_with(
+        assert isinstance(kwargs["startup_log_path"], Path)
+        mock_is_tcp_port_open.assert_called_once_with("127.0.0.1", 8000)
+        mock_wait_ready_or_exit.assert_called_once_with(
             "http://127.0.0.1:8000",
-            timeout_seconds=15.0,
+            mock_process,
+            timeout_seconds=20.0,
         )
         mock_webbrowser.assert_not_called()
 
-    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._wait_for_server_ready_or_exit", return_value=(True, None))
+    @patch("src.cli._is_tcp_port_open", return_value=False)
     @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_custom_host_port(
         self,
         mock_webbrowser: MagicMock,
         mock_start_detached: MagicMock,
-        mock_wait_ready: MagicMock,
+        mock_is_tcp_port_open: MagicMock,
+        mock_wait_ready_or_exit: MagicMock,
         runner: CliRunner,
     ) -> None:
         """Test start command with custom host and port."""
@@ -130,9 +138,11 @@ class TestStartCommand:
         args, kwargs = mock_start_detached.call_args
         assert args[0] == "0.0.0.0"
         assert args[1] == 9000
-        mock_wait_ready.assert_called_once_with(
-            "http://0.0.0.0:9000",
-            timeout_seconds=15.0,
+        mock_is_tcp_port_open.assert_called_once_with("127.0.0.1", 9000)
+        mock_wait_ready_or_exit.assert_called_once_with(
+            "http://127.0.0.1:9000",
+            mock_start_detached.return_value,
+            timeout_seconds=20.0,
         )
 
     @patch("uvicorn.run")
@@ -152,14 +162,16 @@ class TestStartCommand:
             reload=True,
         )
 
-    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._wait_for_server_ready_or_exit", return_value=(True, None))
+    @patch("src.cli._is_tcp_port_open", return_value=False)
     @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_opens_browser_by_default(
         self,
         mock_webbrowser: MagicMock,
         mock_start_detached: MagicMock,
-        mock_wait_ready: MagicMock,
+        mock_is_tcp_port_open: MagicMock,
+        mock_wait_ready_or_exit: MagicMock,
         runner: CliRunner,
     ) -> None:
         """Test start command opens browser by default."""
@@ -167,41 +179,65 @@ class TestStartCommand:
 
         runner.invoke(app, ["start"])
 
-        mock_wait_ready.assert_called_once_with(
+        mock_is_tcp_port_open.assert_called_once_with("127.0.0.1", 8000)
+        mock_wait_ready_or_exit.assert_called_once_with(
             "http://127.0.0.1:8000",
-            timeout_seconds=15.0,
+            mock_start_detached.return_value,
+            timeout_seconds=20.0,
         )
         mock_webbrowser.assert_called_once()
         opened_url = mock_webbrowser.call_args.args[0]
         assert opened_url.startswith("http://127.0.0.1:8000?bb_session=")
 
-    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._wait_for_server_ready_or_exit", return_value=(True, None))
+    @patch("src.cli._is_tcp_port_open", return_value=False)
     @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_no_browser_flag(
         self,
         mock_webbrowser: MagicMock,
         mock_start_detached: MagicMock,
-        mock_wait_ready: MagicMock,
+        mock_is_tcp_port_open: MagicMock,
+        mock_wait_ready_or_exit: MagicMock,
         runner: CliRunner,
     ) -> None:
         """Test start command with --no-browser flag."""
         mock_start_detached.return_value = MagicMock(pid=1010)
         runner.invoke(app, ["start", "--no-browser"])
-        mock_wait_ready.assert_called_once_with(
+        mock_is_tcp_port_open.assert_called_once_with("127.0.0.1", 8000)
+        mock_wait_ready_or_exit.assert_called_once_with(
             "http://127.0.0.1:8000",
-            timeout_seconds=15.0,
+            mock_start_detached.return_value,
+            timeout_seconds=20.0,
         )
         mock_webbrowser.assert_not_called()
 
-    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._is_tcp_port_open", return_value=True)
+    @patch("src.cli._start_detached_server")
+    def test_start_fails_fast_when_port_is_in_use(
+        self,
+        mock_start_detached: MagicMock,
+        mock_is_tcp_port_open: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        """Detached start should fail immediately when target port is already in use."""
+        result = runner.invoke(app, ["start", "--no-browser"])
+
+        assert result.exit_code == 1
+        assert "already in use" in result.output
+        mock_is_tcp_port_open.assert_called_once_with("127.0.0.1", 8000)
+        mock_start_detached.assert_not_called()
+
+    @patch("src.cli._wait_for_server_ready_or_exit", return_value=(True, None))
+    @patch("src.cli._is_tcp_port_open", return_value=False)
     @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_sets_data_dir_env(
         self,
         mock_webbrowser: MagicMock,
         mock_start_detached: MagicMock,
-        mock_wait_ready: MagicMock,
+        mock_is_tcp_port_open: MagicMock,
+        mock_wait_ready_or_exit: MagicMock,
         runner: CliRunner,
         temp_dir: Path,
     ) -> None:
@@ -217,14 +253,16 @@ class TestStartCommand:
             env = args[2]
             assert env["BBANNOTATE_DATA_DIR"] == str(data_dir.resolve())
 
-    @patch("src.cli._wait_for_server_ready", return_value=True)
+    @patch("src.cli._wait_for_server_ready_or_exit", return_value=(True, None))
+    @patch("src.cli._is_tcp_port_open", return_value=False)
     @patch("src.cli._start_detached_server")
     @patch("webbrowser.open")
     def test_start_sets_projects_dir_env(
         self,
         mock_webbrowser: MagicMock,
         mock_start_detached: MagicMock,
-        mock_wait_ready: MagicMock,
+        mock_is_tcp_port_open: MagicMock,
+        mock_wait_ready_or_exit: MagicMock,
         runner: CliRunner,
         temp_dir: Path,
     ) -> None:
@@ -329,6 +367,15 @@ class TestStatusCommand:
         assert "Detected Processes" in result.output
         assert "1234" in result.output
         assert "5678" in result.output
+
+    @patch("src.cli.subprocess.run", side_effect=PermissionError())
+    def test_list_running_processes_handles_permission_errors(
+        self,
+        mock_subprocess_run: MagicMock,
+    ) -> None:
+        """Process listing helper should degrade gracefully on restricted systems."""
+        processes = _list_running_processes()
+        assert processes == []
 
 
 class TestBuildFrontendCommand:
