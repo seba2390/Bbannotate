@@ -55,6 +55,7 @@ class TestHelpCommand:
         assert result.exit_code == 0
         assert "Bounding box annotation tool" in result.output
         assert "start" in result.output
+        assert "status" in result.output
         assert "build-frontend" in result.output
         assert "info" in result.output
 
@@ -263,6 +264,71 @@ class TestInfoCommand:
         result = runner.invoke(app, ["info"])
         assert result.exit_code == 0
         assert "Frontend" in result.output
+
+
+class TestStatusCommand:
+    """Tests for the status command."""
+
+    def test_status_help(self, runner: CliRunner) -> None:
+        """Test status command help."""
+        result = runner.invoke(app, ["status", "--help"])
+        assert result.exit_code == 0
+        assert "Show current bbannotate runtime status" in result.output
+
+    @patch("src.cli._find_frontend_processes", return_value=[])
+    @patch("src.cli._find_backend_processes", return_value=[])
+    @patch("src.cli._list_running_processes", return_value=[])
+    @patch("src.cli._check_api_health", return_value=False)
+    @patch("src.cli._is_tcp_port_open", return_value=False)
+    def test_status_reports_stopped_services(
+        self,
+        mock_is_tcp_port_open: MagicMock,
+        mock_check_api_health: MagicMock,
+        mock_list_running_processes: MagicMock,
+        mock_find_backend_processes: MagicMock,
+        mock_find_frontend_processes: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        """Status should report stopped when nothing is running."""
+        result = runner.invoke(app, ["status"])
+        assert result.exit_code == 0
+        assert "Backend API" in result.output
+        assert "Frontend Dev" in result.output
+        assert "stopped" in result.output
+
+    @patch("src.cli._find_frontend_processes")
+    @patch("src.cli._find_backend_processes")
+    @patch("src.cli._list_running_processes")
+    @patch("src.cli._check_api_health", return_value=True)
+    @patch("src.cli._is_tcp_port_open")
+    def test_status_reports_running_services(
+        self,
+        mock_is_tcp_port_open: MagicMock,
+        mock_check_api_health: MagicMock,
+        mock_list_running_processes: MagicMock,
+        mock_find_backend_processes: MagicMock,
+        mock_find_frontend_processes: MagicMock,
+        runner: CliRunner,
+    ) -> None:
+        """Status should report running and show detected processes."""
+        mock_is_tcp_port_open.side_effect = [True, True]  # backend port, frontend port
+        mock_list_running_processes.return_value = [
+            (1234, "python -m uvicorn src.main:app --host 127.0.0.1 --port 8000"),
+            (5678, "node ./node_modules/vite/bin/vite.js"),
+        ]
+        mock_find_backend_processes.return_value = [
+            (1234, "python -m uvicorn src.main:app --host 127.0.0.1 --port 8000")
+        ]
+        mock_find_frontend_processes.return_value = [
+            (5678, "node ./node_modules/vite/bin/vite.js")
+        ]
+
+        result = runner.invoke(app, ["status"])
+        assert result.exit_code == 0
+        assert "running" in result.output
+        assert "Detected Processes" in result.output
+        assert "1234" in result.output
+        assert "5678" in result.output
 
 
 class TestBuildFrontendCommand:

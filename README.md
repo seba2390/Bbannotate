@@ -15,6 +15,7 @@ A lightweight bounding box annotation tool for image datasets. Built with React/
 - 🖼️ **Multi-format support** — PNG, JPEG, WebP, BMP
 - 📁 **Project management** — Organize annotations by project
 - 🏷️ **Custom labels** — Define your own class labels
+- 🎨 **Adaptive box colors** — Auto contrast, label-based, or custom color modes
 - ⌨️ **Keyboard shortcuts** — Fast annotation workflow
 - 📤 **Multiple export formats** — YOLO, COCO, Pascal VOC, CreateML, CSV
 - 🔄 **Train/Val/Test split** — Automatic dataset splitting for YOLO export
@@ -36,8 +37,16 @@ pip install bbannotate
 # Start the annotation server
 bbannotate start
 
-# Opens http://127.0.0.1:8000 in your browser
+# Opens http://127.0.0.1:8000 in your browser.
+# By default the server runs detached, so you can close the terminal.
+# Closing that browser session stops the detached server automatically.
 ```
+
+### Runtime Modes
+
+- **Default (`bbannotate start`)**: Starts server in detached mode and links lifecycle to the opened browser session.
+- **Development (`bbannotate start --reload`)**: Runs in foreground with auto-reload.
+- **No Browser (`bbannotate start --no-browser`)**: Starts server without opening browser automatically.
 
 ### CLI Options
 
@@ -51,15 +60,15 @@ Options:
   -r, --reload           Enable auto-reload for development
   -d, --data-dir PATH    Directory for storing data [default: ./data]
   --projects-dir PATH    Directory for storing projects [default: ./projects]
-  -v, --version          Show version and exit
   --help                 Show help and exit
 ```
 
 ### Other Commands
 
 ```bash
-bbannotate info            # Show installation info
-bbannotate build-frontend  # Build frontend assets (development)
+bbannotate info             # Show installation info
+bbannotate status           # Show runtime status (backend/frontend processes + ports)
+bbannotate build-frontend   # Build frontend assets (development)
 ```
 
 ## Keyboard Shortcuts
@@ -74,6 +83,7 @@ bbannotate build-frontend  # Build frontend assets (development)
 | `Del` / `Backspace` | Delete annotation |
 | `⌘Z` / `Ctrl+Z` | Undo last annotation |
 | `Esc` | Deselect / Cancel |
+| `Enter` | Mark image done |
 
 ## Export Formats
 
@@ -134,7 +144,7 @@ frontend/          # React/TypeScript frontend
   src/
     components/    # UI components
     hooks/         # React hooks
-tests/             # Test suite (145 tests)
+tests/             # Python test suite
 ```
 
 ## License

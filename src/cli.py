@@ -2,6 +2,7 @@
 
 import os
 import secrets
+import socket
 import subprocess
 import sys
 import threading
@@ -89,6 +90,77 @@ def _open_browser_after_ready(server_url: str, browser_url: str) -> None:
         webbrowser.open(browser_url)
         return
     webbrowser.open(browser_url)
+
+
+def _is_tcp_port_open(host: str, port: int, timeout_seconds: float = 0.4) -> bool:
+    """Check if a TCP port is accepting connections."""
+    with (
+        suppress(OSError),
+        socket.create_connection(
+            (host, port),
+            timeout=timeout_seconds,
+        ),
+    ):
+        return True
+    return False
+
+
+def _check_api_health(url: str, timeout_seconds: float = 0.8) -> bool:
+    """Check if API health endpoint is responding."""
+    health_url = f"{url}/api/health"
+    try:
+        with urllib.request.urlopen(health_url, timeout=timeout_seconds) as response:
+            return response.status == 200
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return False
+
+
+def _list_running_processes() -> list[tuple[int, str]]:
+    """Return process list as (pid, command) tuples."""
+    if os.name == "nt":
+        return []
+
+    result = subprocess.run(
+        ["ps", "-axo", "pid=,command="],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+
+    processes: list[tuple[int, str]] = []
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        pid_raw, _, command = line.partition(" ")
+        if not pid_raw.isdigit():
+            continue
+        processes.append((int(pid_raw), command.strip()))
+    return processes
+
+
+def _find_backend_processes(
+    processes: list[tuple[int, str]],
+) -> list[tuple[int, str]]:
+    """Find likely bbannotate backend processes."""
+    matches: list[tuple[int, str]] = []
+    for pid, command in processes:
+        if "uvicorn" in command and "src.main:app" in command:
+            matches.append((pid, command))
+    return matches
+
+
+def _find_frontend_processes(
+    processes: list[tuple[int, str]],
+) -> list[tuple[int, str]]:
+    """Find likely frontend dev server processes."""
+    matches: list[tuple[int, str]] = []
+    for pid, command in processes:
+        if "vite" in command and "vitest" not in command:
+            matches.append((pid, command))
+    return matches
 
 
 def _start_detached_server(
@@ -329,6 +401,73 @@ def info() -> None:
             border_style="blue",
         )
     )
+
+
+@app.command()
+def status(
+    host: Annotated[
+        str,
+        typer.Option("--host", "-h", help="Host to check for backend status."),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", "-p", help="Backend port to check."),
+    ] = 8000,
+    frontend_port: Annotated[
+        int,
+        typer.Option("--frontend-port", help="Frontend dev server port to check."),
+    ] = 5173,
+) -> None:
+    """Show current bbannotate runtime status."""
+    from rich.table import Table
+
+    backend_url = f"http://{host}:{port}"
+    backend_port_open = _is_tcp_port_open(host, port)
+    frontend_port_open = _is_tcp_port_open(host, frontend_port)
+    backend_healthy = _check_api_health(backend_url)
+
+    all_processes = _list_running_processes()
+    backend_processes = _find_backend_processes(all_processes)
+    frontend_processes = _find_frontend_processes(all_processes)
+
+    table = Table(title="Bbannotate Status")
+    table.add_column("Component", style="bold")
+    table.add_column("State")
+    table.add_column("Details")
+
+    backend_state = (
+        "running"
+        if backend_port_open or backend_healthy or backend_processes
+        else "stopped"
+    )
+    backend_details = (
+        f"port {port}: {'open' if backend_port_open else 'closed'}, "
+        f"health: {'ok' if backend_healthy else 'unreachable'}, "
+        f"processes: {len(backend_processes)}"
+    )
+    table.add_row("Backend API", backend_state, backend_details)
+
+    frontend_state = (
+        "running" if frontend_port_open or frontend_processes else "stopped"
+    )
+    frontend_details = (
+        f"port {frontend_port}: {'open' if frontend_port_open else 'closed'}, "
+        f"processes: {len(frontend_processes)}"
+    )
+    table.add_row("Frontend Dev", frontend_state, frontend_details)
+    console.print(table)
+
+    if backend_processes or frontend_processes:
+        process_table = Table(title="Detected Processes")
+        process_table.add_column("PID", style="cyan", justify="right")
+        process_table.add_column("Type")
+        process_table.add_column("Command")
+
+        for pid, command in backend_processes:
+            process_table.add_row(str(pid), "backend", command)
+        for pid, command in frontend_processes:
+            process_table.add_row(str(pid), "frontend", command)
+        console.print(process_table)
 
 
 def _find_frontend_src() -> Path | None:
