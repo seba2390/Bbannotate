@@ -44,7 +44,7 @@ const AUTO_CONTRAST_COLOR_PALETTE = [
 const AUTO_CONTRAST_SAMPLE_LIMIT = 256;
 const CROSSHAIR_ARM_LENGTH_MIN = 8;
 const CROSSHAIR_ARM_LENGTH_MAX = 48;
-const CROSSHAIR_STROKE_WIDTH_MIN = 1;
+const CROSSHAIR_STROKE_WIDTH_MIN = 0.5;
 const CROSSHAIR_STROKE_WIDTH_MAX = 4;
 const CROSSHAIR_CENTER_GAP = 2;
 const CROSSHAIR_PADDING = 2;
@@ -123,7 +123,8 @@ function normalizeRect(rect: DrawingRect): DrawingRect {
 }
 
 function formatCrosshairStrokeWidth(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  const rounded = Number.parseFloat(value.toFixed(2));
+  return String(rounded);
 }
 
 function buildCrosshairCursor(armLength: number, strokeWidth: number): string {
@@ -235,10 +236,13 @@ export function AnnotationCanvas({
   const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPosition, setLastPanPosition] = useState({ x: 0, y: 0 });
+  const [isCrosshairLengthPanelOpen, setIsCrosshairLengthPanelOpen] = useState(false);
+  const [isCrosshairWidthPanelOpen, setIsCrosshairWidthPanelOpen] = useState(false);
 
   // For auto-pan during drawing
   const autoPanRef = useRef<number | null>(null);
   const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
+  const crosshairToolbarRef = useRef<HTMLDivElement>(null);
 
   // Load image when URL changes
   useEffect(() => {
@@ -423,6 +427,25 @@ export function AnnotationCanvas({
   useEffect(() => {
     return () => stopAutoPan();
   }, [stopAutoPan]);
+
+  // Close crosshair panel when clicking outside its toolbar
+  useEffect(() => {
+    if (!isCrosshairLengthPanelOpen && !isCrosshairWidthPanelOpen) return;
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const toolbarNode = crosshairToolbarRef.current;
+      if (!toolbarNode) return;
+      if (!toolbarNode.contains(target)) {
+        setIsCrosshairLengthPanelOpen(false);
+        setIsCrosshairWidthPanelOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [isCrosshairLengthPanelOpen, isCrosshairWidthPanelOpen]);
 
   // Convert annotation bbox to pixel coordinates (in image space, Stage handles scaling)
   const bboxToRect = useCallback(
@@ -1007,115 +1030,199 @@ export function AnnotationCanvas({
             <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
 
             {/* Label selector */}
-            <select
-              value={currentLabel}
-              onChange={(e) => onLabelChange(e.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              title="Select label (1-9)"
-            >
-              {labels.map((label, idx) => (
-                <option key={label} value={label}>
-                  {idx + 1}. {label}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-center text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Label
+              </span>
+              <select
+                value={currentLabel}
+                onChange={(e) => onLabelChange(e.target.value)}
+                className="h-7 rounded-md border border-gray-300 bg-white px-2 py-0 text-xs focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                title="Select label (1-9)"
+              >
+                {labels.map((label, idx) => (
+                  <option key={label} value={label}>
+                    {idx + 1}. {label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </>
         )}
 
         <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
 
-        <div className="flex items-center gap-1.5">
-          <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            Box
-          </span>
-          <div className="flex items-center rounded-md border border-gray-300 bg-gray-50 p-0.5 dark:border-gray-600 dark:bg-gray-700/60">
-            {(['auto', 'label', 'custom'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => onBboxColorModeChange(mode)}
-                className={`rounded px-2 py-1 text-xs font-medium capitalize transition-colors ${
-                  bboxColorMode === mode
-                    ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-600 dark:text-gray-100'
-                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white'
-                }`}
-                title={`Bounding box color mode: ${mode}`}
-              >
-                {mode}
-              </button>
-            ))}
+        <div className="flex items-end gap-2">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-center text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Box
+            </span>
+            <div className="flex h-7 items-center gap-1">
+              <div className="flex h-7 items-stretch rounded-md border border-gray-300 bg-gray-50 p-0.5 dark:border-gray-600 dark:bg-gray-700/60">
+                {(['auto', 'label', 'custom'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => onBboxColorModeChange(mode)}
+                    className={`flex items-center rounded px-1.5 text-[11px] font-medium capitalize transition-colors ${
+                      bboxColorMode === mode
+                        ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-600 dark:text-gray-100'
+                        : 'text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white'
+                    }`}
+                    title={`Bounding box color mode: ${mode}`}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+
+              {bboxColorMode === 'custom' && (
+                <label
+                  className="relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-700"
+                  title="Choose custom bounding box color"
+                >
+                  <input
+                    type="color"
+                    value={customBboxColor}
+                    onChange={(e) => onCustomBboxColorChange(e.target.value)}
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                    aria-label="Custom bounding box color"
+                  />
+                  <span
+                    className="h-3.5 w-3.5 rounded-sm border border-white/70 shadow-sm"
+                    style={{ backgroundColor: customBboxColor }}
+                  />
+                </label>
+              )}
+            </div>
           </div>
 
-          {bboxColorMode === 'custom' && (
-            <label
-              className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-700"
-              title="Choose custom bounding box color"
-            >
-              <input
-                type="color"
-                value={customBboxColor}
-                onChange={(e) => onCustomBboxColorChange(e.target.value)}
-                className="absolute inset-0 cursor-pointer opacity-0"
-                aria-label="Custom bounding box color"
-              />
-              <span
-                className="h-4 w-4 rounded-sm border border-white/70 shadow-sm"
-                style={{ backgroundColor: customBboxColor }}
-              />
-            </label>
-          )}
-        </div>
+          <div className="h-9 w-px bg-gray-300 dark:bg-gray-600" />
 
-        <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+          <div ref={crosshairToolbarRef} className="relative flex flex-col gap-0.5">
+            <span className="text-center text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Cursor
+            </span>
+            <div className="flex h-7 items-stretch gap-1 rounded-md border border-gray-300 bg-gray-50 p-0.5 dark:border-gray-600 dark:bg-gray-700/60">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCrosshairLengthPanelOpen((prev) => !prev);
+                    setIsCrosshairWidthPanelOpen(false);
+                  }}
+                  className={`flex h-full w-7 items-center justify-center rounded-md transition-colors ${
+                    isCrosshairLengthPanelOpen
+                      ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/50 dark:text-primary-300'
+                      : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }`}
+                  title="Arm length settings"
+                  aria-label="Toggle arm length settings"
+                  aria-expanded={isCrosshairLengthPanelOpen}
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 12h16m-13-3l-3 3 3 3m10-6l3 3-3 3"
+                    />
+                  </svg>
+                </button>
+                {isCrosshairLengthPanelOpen && (
+                  <div className="absolute left-0 top-full mt-1 flex w-44 flex-col gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                    <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Arm Length
+                    </h3>
+                    <label
+                      className="rounded-md border border-gray-300 bg-gray-50 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-700/60"
+                      title="Crosshair arm length"
+                    >
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                          Length
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-200">
+                          {crosshairArmLength}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={CROSSHAIR_ARM_LENGTH_MIN}
+                        max={CROSSHAIR_ARM_LENGTH_MAX}
+                        step={1}
+                        value={crosshairArmLength}
+                        onChange={(e) =>
+                          onCrosshairArmLengthChange(Number.parseInt(e.target.value, 10))
+                        }
+                        className="h-1.5 w-full accent-primary-500"
+                        aria-label="Crosshair arm length"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
 
-        <div className="flex items-center gap-1.5">
-          <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            Cross
-          </span>
-
-          <label
-            className="flex items-center gap-1 rounded-md border border-gray-300 bg-gray-50 px-1.5 py-1 dark:border-gray-600 dark:bg-gray-700/60"
-            title="Crosshair arm length"
-          >
-            <span className="text-[10px] font-semibold uppercase text-gray-500 dark:text-gray-400">
-              L
-            </span>
-            <input
-              type="range"
-              min={CROSSHAIR_ARM_LENGTH_MIN}
-              max={CROSSHAIR_ARM_LENGTH_MAX}
-              step={1}
-              value={crosshairArmLength}
-              onChange={(e) => onCrosshairArmLengthChange(Number.parseInt(e.target.value, 10))}
-              className="h-1.5 w-16 accent-primary-500"
-              aria-label="Crosshair arm length"
-            />
-            <span className="w-6 text-right text-[11px] font-medium text-gray-600 dark:text-gray-200">
-              {crosshairArmLength}
-            </span>
-          </label>
-
-          <label
-            className="flex items-center gap-1 rounded-md border border-gray-300 bg-gray-50 px-1.5 py-1 dark:border-gray-600 dark:bg-gray-700/60"
-            title="Crosshair stroke width"
-          >
-            <span className="text-[10px] font-semibold uppercase text-gray-500 dark:text-gray-400">
-              W
-            </span>
-            <input
-              type="range"
-              min={CROSSHAIR_STROKE_WIDTH_MIN}
-              max={CROSSHAIR_STROKE_WIDTH_MAX}
-              step={0.5}
-              value={crosshairStrokeWidth}
-              onChange={(e) => onCrosshairStrokeWidthChange(Number.parseFloat(e.target.value))}
-              className="h-1.5 w-12 accent-primary-500"
-              aria-label="Crosshair stroke width"
-            />
-            <span className="w-5 text-right text-[11px] font-medium text-gray-600 dark:text-gray-200">
-              {formatCrosshairStrokeWidth(crosshairStrokeWidth)}
-            </span>
-          </label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCrosshairWidthPanelOpen((prev) => !prev);
+                    setIsCrosshairLengthPanelOpen(false);
+                  }}
+                  className={`flex h-full w-7 items-center justify-center rounded-md transition-colors ${
+                    isCrosshairWidthPanelOpen
+                      ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/50 dark:text-primary-300'
+                      : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }`}
+                  title="Arm width settings"
+                  aria-label="Toggle arm width settings"
+                  aria-expanded={isCrosshairWidthPanelOpen}
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 8h12M4 12h16M6 16h12"
+                    />
+                  </svg>
+                </button>
+                {isCrosshairWidthPanelOpen && (
+                  <div className="absolute right-0 top-full mt-1 flex w-44 flex-col gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                    <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Arm Width
+                    </h3>
+                    <label
+                      className="rounded-md border border-gray-300 bg-gray-50 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-700/60"
+                      title="Crosshair stroke width"
+                    >
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                          Width
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-200">
+                          {formatCrosshairStrokeWidth(crosshairStrokeWidth)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={CROSSHAIR_STROKE_WIDTH_MIN}
+                        max={CROSSHAIR_STROKE_WIDTH_MAX}
+                        step={0.25}
+                        value={crosshairStrokeWidth}
+                        onChange={(e) =>
+                          onCrosshairStrokeWidthChange(Number.parseFloat(e.target.value))
+                        }
+                        className="h-1.5 w-full accent-primary-500"
+                        aria-label="Crosshair stroke width"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

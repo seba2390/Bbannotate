@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adjustable draw crosshair controls in canvas toolbar (arm length and stroke width)
 - Persistent crosshair preferences via localStorage
 
+### Changed
+
+- Refined the canvas top toolbar into compact titled groups (`Label`, `Box`, `Cursor`) with consistent control heights
+- Replaced always-visible cursor sliders with compact expandable controls for arm length and arm width to keep toolbar footprint smaller
+- Lowered minimum crosshair arm width from `1.0` to `0.5` for finer cursor thickness tuning
+
 ### Fixed
 
 - Prevent drawing from starting outside image bounds
