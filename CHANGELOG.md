@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-02-11
+
+### Added
+
+- Adjustable draw crosshair controls in canvas toolbar (arm length and stroke width)
+- Persistent crosshair preferences via localStorage
+
+### Fixed
+
+- Prevent drawing from starting outside image bounds
+- Constrain in-progress drawing to image boundaries (including auto-pan updates), so boxes cannot be dragged past image edges
+
 ## [1.0.6] - 2026-02-07
 
 ### Added
@@ -126,5 +138,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BBANNOTATE_DATA_DIR`: Override default data directory
 - `BBANNOTATE_PROJECTS_DIR`: Override default projects directory
 
-[Unreleased]: https://github.com/sebastianydemadsen/bbannotate/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/sebastianydemadsen/bbannotate/compare/v1.0.9...HEAD
+[1.0.9]: https://github.com/sebastianydemadsen/bbannotate/releases/tag/v1.0.9
 [1.0.0]: https://github.com/sebastianydemadsen/bbannotate/releases/tag/v1.0.0

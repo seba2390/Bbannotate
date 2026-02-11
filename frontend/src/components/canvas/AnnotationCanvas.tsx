@@ -42,6 +42,14 @@ const AUTO_CONTRAST_COLOR_PALETTE = [
   '#9333ea',
 ] as const;
 const AUTO_CONTRAST_SAMPLE_LIMIT = 256;
+const CROSSHAIR_ARM_LENGTH_MIN = 8;
+const CROSSHAIR_ARM_LENGTH_MAX = 48;
+const CROSSHAIR_STROKE_WIDTH_MIN = 1;
+const CROSSHAIR_STROKE_WIDTH_MAX = 4;
+const CROSSHAIR_CENTER_GAP = 2;
+const CROSSHAIR_PADDING = 2;
+const CROSSHAIR_OUTER_COLOR = '#0f172a';
+const CROSSHAIR_INNER_COLOR = '#f8fafc';
 
 interface LuminanceIntegralMap {
   width: number;
@@ -114,6 +122,49 @@ function normalizeRect(rect: DrawingRect): DrawingRect {
   };
 }
 
+function formatCrosshairStrokeWidth(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function buildCrosshairCursor(armLength: number, strokeWidth: number): string {
+  const safeArmLength = Math.round(
+    clamp(armLength, CROSSHAIR_ARM_LENGTH_MIN, CROSSHAIR_ARM_LENGTH_MAX)
+  );
+  const safeStrokeWidth = clamp(
+    strokeWidth,
+    CROSSHAIR_STROKE_WIDTH_MIN,
+    CROSSHAIR_STROKE_WIDTH_MAX
+  );
+  const outerStrokeWidth = safeStrokeWidth + 1.6;
+  const size = safeArmLength * 2 + CROSSHAIR_PADDING * 2 + 1;
+  const center = Math.floor(size / 2);
+  const lineStart = CROSSHAIR_PADDING;
+  const lineEnd = size - CROSSHAIR_PADDING;
+  const leftEnd = Math.max(lineStart, center - CROSSHAIR_CENTER_GAP);
+  const rightStart = Math.min(lineEnd, center + CROSSHAIR_CENTER_GAP);
+  const topEnd = Math.max(lineStart, center - CROSSHAIR_CENTER_GAP);
+  const bottomStart = Math.min(lineEnd, center + CROSSHAIR_CENTER_GAP);
+
+  const segments = [
+    `<line x1='${lineStart}' y1='${center}' x2='${leftEnd}' y2='${center}'/>`,
+    `<line x1='${rightStart}' y1='${center}' x2='${lineEnd}' y2='${center}'/>`,
+    `<line x1='${center}' y1='${lineStart}' x2='${center}' y2='${topEnd}'/>`,
+    `<line x1='${center}' y1='${bottomStart}' x2='${center}' y2='${lineEnd}'/>`,
+  ].join('');
+
+  const svg = `
+    <svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}' fill='none' shape-rendering='geometricPrecision'>
+      <g stroke='${CROSSHAIR_OUTER_COLOR}' stroke-width='${outerStrokeWidth}' stroke-linecap='round'>${segments}</g>
+      <g stroke='${CROSSHAIR_INNER_COLOR}' stroke-width='${safeStrokeWidth}' stroke-linecap='round'>${segments}</g>
+    </svg>
+  `
+    .trim()
+    .replace(/\s+/g, ' ');
+
+  const encodedSvg = encodeURIComponent(svg);
+  return `url("data:image/svg+xml,${encodedSvg}") ${center} ${center}, crosshair`;
+}
+
 interface AnnotationCanvasProps {
   imageUrl: string | null;
   annotations: Annotation[];
@@ -121,6 +172,8 @@ interface AnnotationCanvasProps {
   toolMode: ToolMode;
   bboxColorMode: BoundingBoxColorMode;
   customBboxColor: string;
+  crosshairArmLength: number;
+  crosshairStrokeWidth: number;
   currentLabel: string;
   currentClassId: number;
   labels: string[];
@@ -132,6 +185,8 @@ interface AnnotationCanvasProps {
   onToolModeChange: (mode: ToolMode) => void;
   onBboxColorModeChange: (mode: BoundingBoxColorMode) => void;
   onCustomBboxColorChange: (color: string) => void;
+  onCrosshairArmLengthChange: (length: number) => void;
+  onCrosshairStrokeWidthChange: (width: number) => void;
   onMarkDone: () => void;
   onLabelChange: (label: string) => void;
 }
@@ -146,6 +201,8 @@ export function AnnotationCanvas({
   toolMode,
   bboxColorMode,
   customBboxColor,
+  crosshairArmLength,
+  crosshairStrokeWidth,
   currentLabel,
   labels,
   isCurrentImageDone,
@@ -156,6 +213,8 @@ export function AnnotationCanvas({
   onToolModeChange,
   onBboxColorModeChange,
   onCustomBboxColorChange,
+  onCrosshairArmLengthChange,
+  onCrosshairStrokeWidthChange,
   onMarkDone,
   onLabelChange,
 }: AnnotationCanvasProps): JSX.Element {
@@ -492,6 +551,11 @@ export function AnnotationCanvas({
     });
   }, [annotations, bboxToRect, resolveAnnotationColor, selectedId]);
 
+  const drawCursor = useMemo(
+    (): string => buildCrosshairCursor(crosshairArmLength, crosshairStrokeWidth),
+    [crosshairArmLength, crosshairStrokeWidth]
+  );
+
   // Convert pointer position from stage space to image space
   const getImagePosition = useCallback(
     (stage: Konva.Stage): { x: number; y: number } | null => {
@@ -505,6 +569,30 @@ export function AnnotationCanvas({
       };
     },
     [scale, stagePosition]
+  );
+
+  const isWithinImageBounds = useCallback(
+    (position: { x: number; y: number }): boolean => {
+      if (!image) return false;
+      return (
+        position.x >= 0 &&
+        position.x <= image.width &&
+        position.y >= 0 &&
+        position.y <= image.height
+      );
+    },
+    [image]
+  );
+
+  const clampToImageBounds = useCallback(
+    (position: { x: number; y: number }): { x: number; y: number } => {
+      if (!image) return position;
+      return {
+        x: clamp(position.x, 0, image.width),
+        y: clamp(position.y, 0, image.height),
+      };
+    },
+    [image]
   );
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>): void => {
@@ -525,7 +613,7 @@ export function AnnotationCanvas({
     if (toolMode !== 'draw' || !image) return;
 
     const imagePos = getImagePosition(stage);
-    if (!imagePos) return;
+    if (!imagePos || !isWithinImageBounds(imagePos)) return;
 
     setIsDrawing(true);
     setDrawingRect({
@@ -585,11 +673,22 @@ export function AnnotationCanvas({
       // Update drawing rect to follow the pan (keep visual position constant)
       // We need to adjust the rect's size to compensate for the pan
       setDrawingRect((prev) => {
-        if (!prev) return prev;
+        if (!prev || !image) return prev;
+        const proposedEndX = prev.x + (prev.width - dx / scale);
+        const proposedEndY = prev.y + (prev.height - dy / scale);
+        const clampedEndX = clamp(proposedEndX, 0, image.width);
+        const clampedEndY = clamp(proposedEndY, 0, image.height);
+        const nextWidth = clampedEndX - prev.x;
+        const nextHeight = clampedEndY - prev.y;
+
+        if (nextWidth === prev.width && nextHeight === prev.height) {
+          return prev;
+        }
+
         return {
           ...prev,
-          width: prev.width - dx / scale,
-          height: prev.height - dy / scale,
+          width: nextWidth,
+          height: nextHeight,
         };
       });
 
@@ -598,7 +697,7 @@ export function AnnotationCanvas({
     } else {
       stopAutoPan();
     }
-  }, [isDrawing, drawingRect, calculateAutoPanDelta, stopAutoPan, scale]);
+  }, [isDrawing, drawingRect, calculateAutoPanDelta, stopAutoPan, scale, image]);
 
   // Start auto-pan if needed
   const startAutoPanIfNeeded = useCallback(
@@ -639,12 +738,23 @@ export function AnnotationCanvas({
 
     const imagePos = getImagePosition(stage);
     if (!imagePos) return;
+    const clampedImagePos = clampToImageBounds(imagePos);
 
-    // Update drawing rect
-    setDrawingRect({
-      ...drawingRect,
-      width: imagePos.x - drawingRect.x,
-      height: imagePos.y - drawingRect.y,
+    // Update drawing rect while keeping endpoint constrained to image bounds
+    setDrawingRect((prev) => {
+      if (!prev) return prev;
+      const nextWidth = clampedImagePos.x - prev.x;
+      const nextHeight = clampedImagePos.y - prev.y;
+
+      if (nextWidth === prev.width && nextHeight === prev.height) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        width: nextWidth,
+        height: nextHeight,
+      };
     });
 
     // Check if we need to auto-pan
@@ -747,7 +857,7 @@ export function AnnotationCanvas({
       case 'pan':
         return isPanning ? 'grabbing' : 'grab';
       case 'draw':
-        return 'crosshair';
+        return drawCursor;
       case 'select':
       default:
         return 'default';
@@ -954,6 +1064,58 @@ export function AnnotationCanvas({
               />
             </label>
           )}
+        </div>
+
+        <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+
+        <div className="flex items-center gap-1.5">
+          <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Cross
+          </span>
+
+          <label
+            className="flex items-center gap-1 rounded-md border border-gray-300 bg-gray-50 px-1.5 py-1 dark:border-gray-600 dark:bg-gray-700/60"
+            title="Crosshair arm length"
+          >
+            <span className="text-[10px] font-semibold uppercase text-gray-500 dark:text-gray-400">
+              L
+            </span>
+            <input
+              type="range"
+              min={CROSSHAIR_ARM_LENGTH_MIN}
+              max={CROSSHAIR_ARM_LENGTH_MAX}
+              step={1}
+              value={crosshairArmLength}
+              onChange={(e) => onCrosshairArmLengthChange(Number.parseInt(e.target.value, 10))}
+              className="h-1.5 w-16 accent-primary-500"
+              aria-label="Crosshair arm length"
+            />
+            <span className="w-6 text-right text-[11px] font-medium text-gray-600 dark:text-gray-200">
+              {crosshairArmLength}
+            </span>
+          </label>
+
+          <label
+            className="flex items-center gap-1 rounded-md border border-gray-300 bg-gray-50 px-1.5 py-1 dark:border-gray-600 dark:bg-gray-700/60"
+            title="Crosshair stroke width"
+          >
+            <span className="text-[10px] font-semibold uppercase text-gray-500 dark:text-gray-400">
+              W
+            </span>
+            <input
+              type="range"
+              min={CROSSHAIR_STROKE_WIDTH_MIN}
+              max={CROSSHAIR_STROKE_WIDTH_MAX}
+              step={0.5}
+              value={crosshairStrokeWidth}
+              onChange={(e) => onCrosshairStrokeWidthChange(Number.parseFloat(e.target.value))}
+              className="h-1.5 w-12 accent-primary-500"
+              aria-label="Crosshair stroke width"
+            />
+            <span className="w-5 text-right text-[11px] font-medium text-gray-600 dark:text-gray-200">
+              {formatCrosshairStrokeWidth(crosshairStrokeWidth)}
+            </span>
+          </label>
         </div>
       </div>
 

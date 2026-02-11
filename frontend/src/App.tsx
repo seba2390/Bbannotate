@@ -27,11 +27,30 @@ import type { ToolMode, DrawingRect, BoundingBox, Project, BoundingBoxColorMode 
 /** Default labels - empty so users define their own */
 const DEFAULT_LABELS: string[] = [];
 const DEFAULT_CUSTOM_BBOX_COLOR = '#22c55e';
+const DEFAULT_CROSSHAIR_ARM_LENGTH = 16;
+const DEFAULT_CROSSHAIR_STROKE_WIDTH = 1.5;
+const CROSSHAIR_ARM_LENGTH_MIN = 8;
+const CROSSHAIR_ARM_LENGTH_MAX = 48;
+const CROSSHAIR_STROKE_WIDTH_MIN = 1;
+const CROSSHAIR_STROKE_WIDTH_MAX = 4;
 const BROWSER_SESSION_HEARTBEAT_MS = 2500;
 
 /** Get the localStorage key for a project's labels */
 function getLabelsKey(projectName: string | null): string {
   return projectName ? `annotationLabels_${projectName}` : 'annotationLabels';
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function loadNumberPreference(key: string, fallback: number, min: number, max: number): number {
+  if (typeof window === 'undefined') return fallback;
+  const stored = localStorage.getItem(key);
+  if (!stored) return fallback;
+  const parsed = Number.parseFloat(stored);
+  if (!Number.isFinite(parsed)) return fallback;
+  return clampNumber(parsed, min, max);
 }
 
 /** Load labels from localStorage for a specific project */
@@ -81,6 +100,22 @@ function App(): JSX.Element {
     const saved = localStorage.getItem('customBboxColor');
     return saved ?? DEFAULT_CUSTOM_BBOX_COLOR;
   });
+  const [crosshairArmLength, setCrosshairArmLength] = useState<number>(() =>
+    loadNumberPreference(
+      'crosshairArmLength',
+      DEFAULT_CROSSHAIR_ARM_LENGTH,
+      CROSSHAIR_ARM_LENGTH_MIN,
+      CROSSHAIR_ARM_LENGTH_MAX
+    )
+  );
+  const [crosshairStrokeWidth, setCrosshairStrokeWidth] = useState<number>(() =>
+    loadNumberPreference(
+      'crosshairStrokeWidth',
+      DEFAULT_CROSSHAIR_STROKE_WIDTH,
+      CROSSHAIR_STROKE_WIDTH_MIN,
+      CROSSHAIR_STROKE_WIDTH_MAX
+    )
+  );
   const [labels, setLabels] = useState<string[]>(DEFAULT_LABELS);
   const [currentLabel, setCurrentLabel] = useState<string>('');
   const [showLabelManager, setShowLabelManager] = useState(false);
@@ -207,6 +242,24 @@ function App(): JSX.Element {
   useEffect(() => {
     localStorage.setItem('customBboxColor', customBboxColor);
   }, [customBboxColor]);
+
+  useEffect(() => {
+    localStorage.setItem('crosshairArmLength', String(crosshairArmLength));
+  }, [crosshairArmLength]);
+
+  useEffect(() => {
+    localStorage.setItem('crosshairStrokeWidth', String(crosshairStrokeWidth));
+  }, [crosshairStrokeWidth]);
+
+  const handleCrosshairArmLengthChange = useCallback((length: number): void => {
+    setCrosshairArmLength(clampNumber(length, CROSSHAIR_ARM_LENGTH_MIN, CROSSHAIR_ARM_LENGTH_MAX));
+  }, []);
+
+  const handleCrosshairStrokeWidthChange = useCallback((width: number): void => {
+    setCrosshairStrokeWidth(
+      clampNumber(width, CROSSHAIR_STROKE_WIDTH_MIN, CROSSHAIR_STROKE_WIDTH_MAX)
+    );
+  }, []);
 
   // Keep detached server alive while browser session is active
   useEffect(() => {
@@ -688,6 +741,8 @@ function App(): JSX.Element {
             toolMode={toolMode}
             bboxColorMode={bboxColorMode}
             customBboxColor={customBboxColor}
+            crosshairArmLength={crosshairArmLength}
+            crosshairStrokeWidth={crosshairStrokeWidth}
             currentLabel={currentLabel}
             currentClassId={labels.indexOf(currentLabel)}
             labels={labels}
@@ -699,6 +754,8 @@ function App(): JSX.Element {
             onToolModeChange={setToolMode}
             onBboxColorModeChange={setBboxColorMode}
             onCustomBboxColorChange={setCustomBboxColor}
+            onCrosshairArmLengthChange={handleCrosshairArmLengthChange}
+            onCrosshairStrokeWidthChange={handleCrosshairStrokeWidthChange}
             onMarkDone={handleMarkDone}
             onLabelChange={setCurrentLabel}
           />
