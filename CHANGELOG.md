@@ -16,14 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Refined the canvas top toolbar into compact titled groups (`Label`, `Box`, `Cursor`) with consistent control heights
+- Refined the canvas top toolbar into compact titled groups (`Controls`, `Zoom`, `Label`, `Box`, `Cursor`) with consistent control heights
+- Updated `Controls` to always-visible compact tool buttons (`Select`, `Draw`, `Pan`) under the title
+- Moved zoom actions into a compact expandable panel under `Zoom` to reduce toolbar width
 - Replaced always-visible cursor sliders with compact expandable controls for arm length and arm width to keep toolbar footprint smaller
+- Increased maximum crosshair arm length from `48` to `96` for longer cursor arms
+- Switched draw-mode crosshair rendering to a canvas overlay to keep long cursor arms stable at larger sizes
 - Lowered minimum crosshair arm width from `1.0` to `0.5` for finer cursor thickness tuning
 
 ### Fixed
 
 - Prevent drawing from starting outside image bounds
 - Constrain in-progress drawing to image boundaries (including auto-pan updates), so boxes cannot be dragged past image edges
+- Fixed crosshair shrinking at larger arm lengths due browser cursor image-size limits
+- Center images by default in the canvas viewport (including zoom reset)
 
 ## [1.0.6] - 2026-02-07
 
