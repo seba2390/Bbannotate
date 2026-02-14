@@ -42,6 +42,14 @@ const AUTO_CONTRAST_COLOR_PALETTE = [
   '#9333ea',
 ] as const;
 const AUTO_CONTRAST_SAMPLE_LIMIT = 256;
+const CROSSHAIR_ARM_LENGTH_MIN = 8;
+const CROSSHAIR_ARM_LENGTH_MAX = 96;
+const CROSSHAIR_STROKE_WIDTH_MIN = 0.5;
+const CROSSHAIR_STROKE_WIDTH_MAX = 4;
+const CROSSHAIR_CENTER_GAP = 2;
+const CROSSHAIR_PADDING = 2;
+const CROSSHAIR_OUTER_COLOR = '#0f172a';
+const CROSSHAIR_INNER_COLOR = '#f8fafc';
 
 interface LuminanceIntegralMap {
   width: number;
@@ -114,6 +122,63 @@ function normalizeRect(rect: DrawingRect): DrawingRect {
   };
 }
 
+function formatCrosshairStrokeWidth(value: number): string {
+  const rounded = Number.parseFloat(value.toFixed(2));
+  return String(rounded);
+}
+
+function buildCrosshairCursor(armLength: number, strokeWidth: number): string {
+  const safeArmLength = Math.round(
+    clamp(armLength, CROSSHAIR_ARM_LENGTH_MIN, CROSSHAIR_ARM_LENGTH_MAX)
+  );
+  const safeStrokeWidth = clamp(
+    strokeWidth,
+    CROSSHAIR_STROKE_WIDTH_MIN,
+    CROSSHAIR_STROKE_WIDTH_MAX
+  );
+  const outerStrokeWidth = safeStrokeWidth + 1.6;
+  const size = safeArmLength * 2 + CROSSHAIR_PADDING * 2 + 1;
+  const center = Math.floor(size / 2);
+  const lineStart = CROSSHAIR_PADDING;
+  const lineEnd = size - CROSSHAIR_PADDING;
+  const leftEnd = Math.max(lineStart, center - CROSSHAIR_CENTER_GAP);
+  const rightStart = Math.min(lineEnd, center + CROSSHAIR_CENTER_GAP);
+  const topEnd = Math.max(lineStart, center - CROSSHAIR_CENTER_GAP);
+  const bottomStart = Math.min(lineEnd, center + CROSSHAIR_CENTER_GAP);
+
+  const segments = [
+    `<line x1='${lineStart}' y1='${center}' x2='${leftEnd}' y2='${center}'/>`,
+    `<line x1='${rightStart}' y1='${center}' x2='${lineEnd}' y2='${center}'/>`,
+    `<line x1='${center}' y1='${lineStart}' x2='${center}' y2='${topEnd}'/>`,
+    `<line x1='${center}' y1='${bottomStart}' x2='${center}' y2='${lineEnd}'/>`,
+  ].join('');
+
+  const svg = `
+    <svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}' fill='none' shape-rendering='geometricPrecision'>
+      <g stroke='${CROSSHAIR_OUTER_COLOR}' stroke-width='${outerStrokeWidth}' stroke-linecap='round'>${segments}</g>
+      <g stroke='${CROSSHAIR_INNER_COLOR}' stroke-width='${safeStrokeWidth}' stroke-linecap='round'>${segments}</g>
+    </svg>
+  `
+    .trim()
+    .replace(/\s+/g, ' ');
+
+  const encodedSvg = encodeURIComponent(svg);
+  return `url("data:image/svg+xml,${encodedSvg}") ${center} ${center}, crosshair`;
+}
+
+function getCenteredStagePosition(
+  stageWidth: number,
+  stageHeight: number,
+  imageWidth: number,
+  imageHeight: number,
+  scale: number
+): { x: number; y: number } {
+  return {
+    x: (stageWidth - imageWidth * scale) / 2,
+    y: (stageHeight - imageHeight * scale) / 2,
+  };
+}
+
 interface AnnotationCanvasProps {
   imageUrl: string | null;
   annotations: Annotation[];
@@ -121,6 +186,8 @@ interface AnnotationCanvasProps {
   toolMode: ToolMode;
   bboxColorMode: BoundingBoxColorMode;
   customBboxColor: string;
+  crosshairArmLength: number;
+  crosshairStrokeWidth: number;
   currentLabel: string;
   currentClassId: number;
   labels: string[];
@@ -132,6 +199,8 @@ interface AnnotationCanvasProps {
   onToolModeChange: (mode: ToolMode) => void;
   onBboxColorModeChange: (mode: BoundingBoxColorMode) => void;
   onCustomBboxColorChange: (color: string) => void;
+  onCrosshairArmLengthChange: (length: number) => void;
+  onCrosshairStrokeWidthChange: (width: number) => void;
   onMarkDone: () => void;
   onLabelChange: (label: string) => void;
 }
@@ -146,6 +215,8 @@ export function AnnotationCanvas({
   toolMode,
   bboxColorMode,
   customBboxColor,
+  crosshairArmLength,
+  crosshairStrokeWidth,
   currentLabel,
   labels,
   isCurrentImageDone,
@@ -156,6 +227,8 @@ export function AnnotationCanvas({
   onToolModeChange,
   onBboxColorModeChange,
   onCustomBboxColorChange,
+  onCrosshairArmLengthChange,
+  onCrosshairStrokeWidthChange,
   onMarkDone,
   onLabelChange,
 }: AnnotationCanvasProps): JSX.Element {
@@ -176,10 +249,18 @@ export function AnnotationCanvas({
   const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPosition, setLastPanPosition] = useState({ x: 0, y: 0 });
+  const [isCursorOverlayVisible, setIsCursorOverlayVisible] = useState(false);
+  const [isZoomPanelOpen, setIsZoomPanelOpen] = useState(false);
+  const [isCrosshairLengthPanelOpen, setIsCrosshairLengthPanelOpen] = useState(false);
+  const [isCrosshairWidthPanelOpen, setIsCrosshairWidthPanelOpen] = useState(false);
 
   // For auto-pan during drawing
   const autoPanRef = useRef<number | null>(null);
   const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
+  const zoomRef = useRef(zoom);
+  const cursorOverlayRef = useRef<HTMLDivElement>(null);
+  const zoomToolbarRef = useRef<HTMLDivElement>(null);
+  const crosshairToolbarRef = useRef<HTMLDivElement>(null);
 
   // Load image when URL changes
   useEffect(() => {
@@ -241,6 +322,10 @@ export function AnnotationCanvas({
     });
   }, [image]);
 
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
   // Resize stage to fit container
   useEffect(() => {
     const updateSize = (): void => {
@@ -253,19 +338,29 @@ export function AnnotationCanvas({
         const scaleY = containerHeight / image.height;
         const newBaseScale = Math.min(scaleX, scaleY, 1); // Don't scale up
 
+        const nextScale = newBaseScale * zoomRef.current;
         setBaseScale(newBaseScale);
-        setScale(newBaseScale * zoom);
+        setScale(nextScale);
         setStageSize({
           width: containerWidth,
           height: containerHeight,
         });
+        setStagePosition(
+          getCenteredStagePosition(
+            containerWidth,
+            containerHeight,
+            image.width,
+            image.height,
+            nextScale
+          )
+        );
       }
     };
 
     updateSize();
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
-  }, [image, zoom]);
+  }, [image]);
 
   // Update scale when zoom changes
   useEffect(() => {
@@ -283,8 +378,17 @@ export function AnnotationCanvas({
 
   const handleZoomReset = useCallback((): void => {
     setZoom(1);
-    setStagePosition({ x: 0, y: 0 });
-  }, []);
+    if (!image) return;
+    setStagePosition(
+      getCenteredStagePosition(
+        stageSize.width,
+        stageSize.height,
+        image.width,
+        image.height,
+        baseScale
+      )
+    );
+  }, [image, stageSize, baseScale]);
 
   // Handle mouse wheel for zooming
   const handleWheel = useCallback(
@@ -364,6 +468,36 @@ export function AnnotationCanvas({
   useEffect(() => {
     return () => stopAutoPan();
   }, [stopAutoPan]);
+
+  // Close floating toolbar panels when clicking outside their controls
+  useEffect(() => {
+    if (!isZoomPanelOpen && !isCrosshairLengthPanelOpen && !isCrosshairWidthPanelOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+
+      const zoomToolbarNode = zoomToolbarRef.current;
+      if (isZoomPanelOpen && zoomToolbarNode && !zoomToolbarNode.contains(target)) {
+        setIsZoomPanelOpen(false);
+      }
+
+      const crosshairToolbarNode = crosshairToolbarRef.current;
+      if (
+        (isCrosshairLengthPanelOpen || isCrosshairWidthPanelOpen) &&
+        crosshairToolbarNode &&
+        !crosshairToolbarNode.contains(target)
+      ) {
+        setIsCrosshairLengthPanelOpen(false);
+        setIsCrosshairWidthPanelOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [isZoomPanelOpen, isCrosshairLengthPanelOpen, isCrosshairWidthPanelOpen]);
 
   // Convert annotation bbox to pixel coordinates (in image space, Stage handles scaling)
   const bboxToRect = useCallback(
@@ -492,6 +626,13 @@ export function AnnotationCanvas({
     });
   }, [annotations, bboxToRect, resolveAnnotationColor, selectedId]);
 
+  const drawCursor = useMemo(
+    (): string => buildCrosshairCursor(crosshairArmLength, crosshairStrokeWidth),
+    [crosshairArmLength, crosshairStrokeWidth]
+  );
+  const crosshairSegmentLength = Math.max(1, crosshairArmLength - CROSSHAIR_CENTER_GAP);
+  const crosshairOuterStrokeWidth = crosshairStrokeWidth + 1.6;
+
   // Convert pointer position from stage space to image space
   const getImagePosition = useCallback(
     (stage: Konva.Stage): { x: number; y: number } | null => {
@@ -506,6 +647,43 @@ export function AnnotationCanvas({
     },
     [scale, stagePosition]
   );
+
+  const isWithinImageBounds = useCallback(
+    (position: { x: number; y: number }): boolean => {
+      if (!image) return false;
+      return (
+        position.x >= 0 &&
+        position.x <= image.width &&
+        position.y >= 0 &&
+        position.y <= image.height
+      );
+    },
+    [image]
+  );
+
+  const clampToImageBounds = useCallback(
+    (position: { x: number; y: number }): { x: number; y: number } => {
+      if (!image) return position;
+      return {
+        x: clamp(position.x, 0, image.width),
+        y: clamp(position.y, 0, image.height),
+      };
+    },
+    [image]
+  );
+
+  const updateCursorOverlayPosition = useCallback((screenPos: { x: number; y: number }): void => {
+    const overlayNode = cursorOverlayRef.current;
+    if (!overlayNode) return;
+    overlayNode.style.left = `${screenPos.x}px`;
+    overlayNode.style.top = `${screenPos.y}px`;
+  }, []);
+
+  useEffect(() => {
+    if (toolMode !== 'draw') {
+      setIsCursorOverlayVisible(false);
+    }
+  }, [toolMode]);
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>): void => {
     const stage = e.target.getStage();
@@ -525,7 +703,7 @@ export function AnnotationCanvas({
     if (toolMode !== 'draw' || !image) return;
 
     const imagePos = getImagePosition(stage);
-    if (!imagePos) return;
+    if (!imagePos || !isWithinImageBounds(imagePos)) return;
 
     setIsDrawing(true);
     setDrawingRect({
@@ -585,11 +763,22 @@ export function AnnotationCanvas({
       // Update drawing rect to follow the pan (keep visual position constant)
       // We need to adjust the rect's size to compensate for the pan
       setDrawingRect((prev) => {
-        if (!prev) return prev;
+        if (!prev || !image) return prev;
+        const proposedEndX = prev.x + (prev.width - dx / scale);
+        const proposedEndY = prev.y + (prev.height - dy / scale);
+        const clampedEndX = clamp(proposedEndX, 0, image.width);
+        const clampedEndY = clamp(proposedEndY, 0, image.height);
+        const nextWidth = clampedEndX - prev.x;
+        const nextHeight = clampedEndY - prev.y;
+
+        if (nextWidth === prev.width && nextHeight === prev.height) {
+          return prev;
+        }
+
         return {
           ...prev,
-          width: prev.width - dx / scale,
-          height: prev.height - dy / scale,
+          width: nextWidth,
+          height: nextHeight,
         };
       });
 
@@ -598,7 +787,7 @@ export function AnnotationCanvas({
     } else {
       stopAutoPan();
     }
-  }, [isDrawing, drawingRect, calculateAutoPanDelta, stopAutoPan, scale]);
+  }, [isDrawing, drawingRect, calculateAutoPanDelta, stopAutoPan, scale, image]);
 
   // Start auto-pan if needed
   const startAutoPanIfNeeded = useCallback(
@@ -634,22 +823,44 @@ export function AnnotationCanvas({
       return;
     }
 
+    const imagePos = getImagePosition(stage);
+    const shouldShowOverlay = toolMode === 'draw' && !!imagePos && isWithinImageBounds(imagePos);
+
+    if (shouldShowOverlay) {
+      updateCursorOverlayPosition(screenPos);
+    }
+    setIsCursorOverlayVisible((prev) => (prev === shouldShowOverlay ? prev : shouldShowOverlay));
+
     // Handle drawing
     if (!isDrawing || !drawingRect) return;
 
-    const imagePos = getImagePosition(stage);
     if (!imagePos) return;
+    const clampedImagePos = clampToImageBounds(imagePos);
 
-    // Update drawing rect
-    setDrawingRect({
-      ...drawingRect,
-      width: imagePos.x - drawingRect.x,
-      height: imagePos.y - drawingRect.y,
+    // Update drawing rect while keeping endpoint constrained to image bounds
+    setDrawingRect((prev) => {
+      if (!prev) return prev;
+      const nextWidth = clampedImagePos.x - prev.x;
+      const nextHeight = clampedImagePos.y - prev.y;
+
+      if (nextWidth === prev.width && nextHeight === prev.height) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        width: nextWidth,
+        height: nextHeight,
+      };
     });
 
     // Check if we need to auto-pan
     startAutoPanIfNeeded(screenPos);
   };
+
+  const handleMouseLeave = useCallback((): void => {
+    setIsCursorOverlayVisible(false);
+  }, []);
 
   const handleMouseUp = useCallback((): void => {
     // Stop any auto-pan in progress
@@ -747,7 +958,7 @@ export function AnnotationCanvas({
       case 'pan':
         return isPanning ? 'grabbing' : 'grab';
       case 'draw':
-        return 'crosshair';
+        return isCursorOverlayVisible ? 'none' : drawCursor;
       case 'select':
       default:
         return 'default';
@@ -795,101 +1006,160 @@ export function AnnotationCanvas({
     >
       {/* Canvas Toolbar */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded-lg bg-white dark:bg-gray-800 p-1 shadow-lg border border-gray-200 dark:border-gray-700">
-        {/* Tool buttons */}
-        <button
-          onClick={() => onToolModeChange('select')}
-          className={`p-2 rounded-md transition-colors ${
-            toolMode === 'select'
-              ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400'
-              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-          }`}
-          title="Select (S)"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
-            />
-          </svg>
-        </button>
-        <button
-          onClick={() => onToolModeChange('draw')}
-          className={`p-2 rounded-md transition-colors ${
-            toolMode === 'draw'
-              ? 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400'
-              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-          }`}
-          title="Draw Box (D)"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z"
-            />
-          </svg>
-        </button>
-        <button
-          onClick={() => onToolModeChange('pan')}
-          className={`p-2 rounded-md transition-colors ${
-            toolMode === 'pan'
-              ? 'bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400'
-              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-          }`}
-          title="Pan (Space)"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"
-            />
-          </svg>
-        </button>
+        {/* Tool controls */}
+        <div className="flex flex-col gap-0.5">
+          <span className="text-center text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Controls
+          </span>
+          <div className="flex h-7 items-stretch gap-1 rounded-md border border-gray-300 bg-gray-50 p-0.5 dark:border-gray-600 dark:bg-gray-700/60">
+            <button
+              type="button"
+              onClick={() => onToolModeChange('select')}
+              className={`flex h-full w-7 items-center justify-center rounded-md transition-colors ${
+                toolMode === 'select'
+                  ? 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400'
+                  : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+              title="Select (S)"
+              aria-label="Select tool"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => onToolModeChange('draw')}
+              className={`flex h-full w-7 items-center justify-center rounded-md transition-colors ${
+                toolMode === 'draw'
+                  ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400'
+                  : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+              title="Draw Box (D)"
+              aria-label="Draw tool"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => onToolModeChange('pan')}
+              className={`flex h-full w-7 items-center justify-center rounded-md transition-colors ${
+                toolMode === 'pan'
+                  ? 'bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-400'
+                  : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+              title="Pan (Space)"
+              aria-label="Pan tool"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
 
         {/* Separator */}
         <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
 
         {/* Zoom controls */}
-        <button
-          onClick={handleZoomOut}
-          className="p-2 rounded-md text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          title="Zoom Out"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"
-            />
-          </svg>
-        </button>
-        <button
-          onClick={handleZoomReset}
-          className="px-2 py-1 min-w-[48px] text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-          title="Reset Zoom"
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-        <button
-          onClick={handleZoomIn}
-          className="p-2 rounded-md text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          title="Zoom In"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"
-            />
-          </svg>
-        </button>
+        <div ref={zoomToolbarRef} className="relative flex flex-col gap-0.5">
+          <span className="text-center text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Zoom
+          </span>
+          <div className="flex h-7 items-stretch rounded-md border border-gray-300 bg-gray-50 p-0.5 dark:border-gray-600 dark:bg-gray-700/60">
+            <button
+              type="button"
+              onClick={() => {
+                setIsZoomPanelOpen((prev) => !prev);
+                setIsCrosshairLengthPanelOpen(false);
+                setIsCrosshairWidthPanelOpen(false);
+              }}
+              className={`flex h-full w-7 items-center justify-center rounded-md transition-colors ${
+                isZoomPanelOpen
+                  ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/50 dark:text-primary-300'
+                  : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+              title="Zoom settings"
+              aria-label="Toggle zoom settings"
+              aria-expanded={isZoomPanelOpen}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-4.35-4.35m1.35-5.15a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z"
+                />
+              </svg>
+            </button>
+          </div>
+          {isZoomPanelOpen && (
+            <div className="absolute left-0 top-full mt-1 flex w-44 flex-col gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+              <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Zoom
+              </h3>
+              <div className="grid grid-cols-[32px_minmax(0,1fr)_32px] items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleZoomOut}
+                  className="flex h-7 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+                  title="Zoom Out"
+                  aria-label="Zoom out"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 12h12"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZoomReset}
+                  className="h-7 rounded-md border border-gray-300 bg-gray-50 px-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700/60 dark:text-gray-200 dark:hover:bg-gray-600"
+                  title="Reset Zoom"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZoomIn}
+                  className="flex h-7 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+                  title="Zoom In"
+                  aria-label="Zoom in"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 6v12m-6-6h12"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Separator */}
         {labels.length > 0 && (
@@ -897,63 +1167,201 @@ export function AnnotationCanvas({
             <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
 
             {/* Label selector */}
-            <select
-              value={currentLabel}
-              onChange={(e) => onLabelChange(e.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              title="Select label (1-9)"
-            >
-              {labels.map((label, idx) => (
-                <option key={label} value={label}>
-                  {idx + 1}. {label}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-center text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Label
+              </span>
+              <select
+                value={currentLabel}
+                onChange={(e) => onLabelChange(e.target.value)}
+                className="h-7 rounded-md border border-gray-300 bg-white px-2 py-0 text-xs focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                title="Select label (1-9)"
+              >
+                {labels.map((label, idx) => (
+                  <option key={label} value={label}>
+                    {idx + 1}. {label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </>
         )}
 
         <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
 
-        <div className="flex items-center gap-1.5">
-          <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            Box
-          </span>
-          <div className="flex items-center rounded-md border border-gray-300 bg-gray-50 p-0.5 dark:border-gray-600 dark:bg-gray-700/60">
-            {(['auto', 'label', 'custom'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => onBboxColorModeChange(mode)}
-                className={`rounded px-2 py-1 text-xs font-medium capitalize transition-colors ${
-                  bboxColorMode === mode
-                    ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-600 dark:text-gray-100'
-                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white'
-                }`}
-                title={`Bounding box color mode: ${mode}`}
-              >
-                {mode}
-              </button>
-            ))}
+        <div className="flex items-end gap-2">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-center text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Box
+            </span>
+            <div className="flex h-7 items-center gap-1">
+              <div className="flex h-7 items-stretch rounded-md border border-gray-300 bg-gray-50 p-0.5 dark:border-gray-600 dark:bg-gray-700/60">
+                {(['auto', 'label', 'custom'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => onBboxColorModeChange(mode)}
+                    className={`flex items-center rounded px-1.5 text-[11px] font-medium capitalize transition-colors ${
+                      bboxColorMode === mode
+                        ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-600 dark:text-gray-100'
+                        : 'text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white'
+                    }`}
+                    title={`Bounding box color mode: ${mode}`}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+
+              {bboxColorMode === 'custom' && (
+                <label
+                  className="relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-700"
+                  title="Choose custom bounding box color"
+                >
+                  <input
+                    type="color"
+                    value={customBboxColor}
+                    onChange={(e) => onCustomBboxColorChange(e.target.value)}
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                    aria-label="Custom bounding box color"
+                  />
+                  <span
+                    className="h-3.5 w-3.5 rounded-sm border border-white/70 shadow-sm"
+                    style={{ backgroundColor: customBboxColor }}
+                  />
+                </label>
+              )}
+            </div>
           </div>
 
-          {bboxColorMode === 'custom' && (
-            <label
-              className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-700"
-              title="Choose custom bounding box color"
-            >
-              <input
-                type="color"
-                value={customBboxColor}
-                onChange={(e) => onCustomBboxColorChange(e.target.value)}
-                className="absolute inset-0 cursor-pointer opacity-0"
-                aria-label="Custom bounding box color"
-              />
-              <span
-                className="h-4 w-4 rounded-sm border border-white/70 shadow-sm"
-                style={{ backgroundColor: customBboxColor }}
-              />
-            </label>
-          )}
+          <div className="h-9 w-px bg-gray-300 dark:bg-gray-600" />
+
+          <div ref={crosshairToolbarRef} className="relative flex flex-col gap-0.5">
+            <span className="text-center text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Cursor
+            </span>
+            <div className="flex h-7 items-stretch gap-1 rounded-md border border-gray-300 bg-gray-50 p-0.5 dark:border-gray-600 dark:bg-gray-700/60">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsZoomPanelOpen(false);
+                    setIsCrosshairLengthPanelOpen((prev) => !prev);
+                    setIsCrosshairWidthPanelOpen(false);
+                  }}
+                  className={`flex h-full w-7 items-center justify-center rounded-md transition-colors ${
+                    isCrosshairLengthPanelOpen
+                      ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/50 dark:text-primary-300'
+                      : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }`}
+                  title="Arm length settings"
+                  aria-label="Toggle arm length settings"
+                  aria-expanded={isCrosshairLengthPanelOpen}
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 12h16m-13-3l-3 3 3 3m10-6l3 3-3 3"
+                    />
+                  </svg>
+                </button>
+                {isCrosshairLengthPanelOpen && (
+                  <div className="absolute left-0 top-full mt-1 flex w-44 flex-col gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                    <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Arm Length
+                    </h3>
+                    <label
+                      className="rounded-md border border-gray-300 bg-gray-50 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-700/60"
+                      title="Crosshair arm length"
+                    >
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                          Length
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-200">
+                          {crosshairArmLength}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={CROSSHAIR_ARM_LENGTH_MIN}
+                        max={CROSSHAIR_ARM_LENGTH_MAX}
+                        step={1}
+                        value={crosshairArmLength}
+                        onChange={(e) =>
+                          onCrosshairArmLengthChange(Number.parseInt(e.target.value, 10))
+                        }
+                        className="h-1.5 w-full accent-primary-500"
+                        aria-label="Crosshair arm length"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsZoomPanelOpen(false);
+                    setIsCrosshairWidthPanelOpen((prev) => !prev);
+                    setIsCrosshairLengthPanelOpen(false);
+                  }}
+                  className={`flex h-full w-7 items-center justify-center rounded-md transition-colors ${
+                    isCrosshairWidthPanelOpen
+                      ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/50 dark:text-primary-300'
+                      : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }`}
+                  title="Arm width settings"
+                  aria-label="Toggle arm width settings"
+                  aria-expanded={isCrosshairWidthPanelOpen}
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 8h12M4 12h16M6 16h12"
+                    />
+                  </svg>
+                </button>
+                {isCrosshairWidthPanelOpen && (
+                  <div className="absolute right-0 top-full mt-1 flex w-44 flex-col gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                    <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Arm Width
+                    </h3>
+                    <label
+                      className="rounded-md border border-gray-300 bg-gray-50 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-700/60"
+                      title="Crosshair stroke width"
+                    >
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-gray-600 dark:text-gray-300">
+                          Width
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-200">
+                          {formatCrosshairStrokeWidth(crosshairStrokeWidth)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={CROSSHAIR_STROKE_WIDTH_MIN}
+                        max={CROSSHAIR_STROKE_WIDTH_MAX}
+                        step={0.25}
+                        value={crosshairStrokeWidth}
+                        onChange={(e) =>
+                          onCrosshairStrokeWidthChange(Number.parseFloat(e.target.value))
+                        }
+                        className="h-1.5 w-full accent-primary-500"
+                        aria-label="Crosshair stroke width"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -967,6 +1375,7 @@ export function AnnotationCanvas({
         y={stagePosition.y}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
         onClick={handleStageClick}
@@ -1168,6 +1577,98 @@ export function AnnotationCanvas({
           />
         </Layer>
       </Stage>
+
+      {toolMode === 'draw' && (
+        <div
+          ref={cursorOverlayRef}
+          className={`pointer-events-none absolute left-0 top-0 z-20 ${
+            isCursorOverlayVisible ? 'opacity-100' : 'opacity-0'
+          }`}
+          style={{ width: 0, height: 0 }}
+        >
+          <span
+            className="absolute rounded-full"
+            style={{
+              left: -crosshairArmLength,
+              top: -crosshairOuterStrokeWidth / 2,
+              width: crosshairSegmentLength,
+              height: crosshairOuterStrokeWidth,
+              backgroundColor: CROSSHAIR_OUTER_COLOR,
+            }}
+          />
+          <span
+            className="absolute rounded-full"
+            style={{
+              left: CROSSHAIR_CENTER_GAP,
+              top: -crosshairOuterStrokeWidth / 2,
+              width: crosshairSegmentLength,
+              height: crosshairOuterStrokeWidth,
+              backgroundColor: CROSSHAIR_OUTER_COLOR,
+            }}
+          />
+          <span
+            className="absolute rounded-full"
+            style={{
+              left: -crosshairOuterStrokeWidth / 2,
+              top: -crosshairArmLength,
+              width: crosshairOuterStrokeWidth,
+              height: crosshairSegmentLength,
+              backgroundColor: CROSSHAIR_OUTER_COLOR,
+            }}
+          />
+          <span
+            className="absolute rounded-full"
+            style={{
+              left: -crosshairOuterStrokeWidth / 2,
+              top: CROSSHAIR_CENTER_GAP,
+              width: crosshairOuterStrokeWidth,
+              height: crosshairSegmentLength,
+              backgroundColor: CROSSHAIR_OUTER_COLOR,
+            }}
+          />
+
+          <span
+            className="absolute rounded-full"
+            style={{
+              left: -crosshairArmLength,
+              top: -crosshairStrokeWidth / 2,
+              width: crosshairSegmentLength,
+              height: crosshairStrokeWidth,
+              backgroundColor: CROSSHAIR_INNER_COLOR,
+            }}
+          />
+          <span
+            className="absolute rounded-full"
+            style={{
+              left: CROSSHAIR_CENTER_GAP,
+              top: -crosshairStrokeWidth / 2,
+              width: crosshairSegmentLength,
+              height: crosshairStrokeWidth,
+              backgroundColor: CROSSHAIR_INNER_COLOR,
+            }}
+          />
+          <span
+            className="absolute rounded-full"
+            style={{
+              left: -crosshairStrokeWidth / 2,
+              top: -crosshairArmLength,
+              width: crosshairStrokeWidth,
+              height: crosshairSegmentLength,
+              backgroundColor: CROSSHAIR_INNER_COLOR,
+            }}
+          />
+          <span
+            className="absolute rounded-full"
+            style={{
+              left: -crosshairStrokeWidth / 2,
+              top: CROSSHAIR_CENTER_GAP,
+              width: crosshairStrokeWidth,
+              height: crosshairSegmentLength,
+              backgroundColor: CROSSHAIR_INNER_COLOR,
+            }}
+          />
+        </div>
+      )}
 
       {/* Done button overlay - upper right corner */}
       {imageUrl && (
