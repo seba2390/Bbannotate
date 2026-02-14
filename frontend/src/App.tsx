@@ -120,6 +120,7 @@ function App(): JSX.Element {
   const [currentLabel, setCurrentLabel] = useState<string>('');
   const [showLabelManager, setShowLabelManager] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [panelSelectionCenterRequest, setPanelSelectionCenterRequest] = useState(0);
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return (
@@ -326,6 +327,14 @@ function App(): JSX.Element {
       deleteAnnotation(currentImage, selectedId);
     }
   }, [selectedId, currentImage, deleteAnnotation]);
+
+  const handleSelectAnnotationFromPanel = useCallback(
+    (annotationId: string): void => {
+      selectAnnotation(annotationId);
+      setPanelSelectionCenterRequest((prev) => prev + 1);
+    },
+    [selectAnnotation]
+  );
 
   // Handle deselect (exposed for keyboard shortcut)
   const handleDeselect = useCallback((): void => {
@@ -738,6 +747,7 @@ function App(): JSX.Element {
             imageUrl={currentImage ? getImageUrl(currentImage) : null}
             annotations={annotations}
             selectedId={selectedId}
+            centerOnSelectedRequest={panelSelectionCenterRequest}
             toolMode={toolMode}
             bboxColorMode={bboxColorMode}
             customBboxColor={customBboxColor}
@@ -827,7 +837,7 @@ function App(): JSX.Element {
             <AnnotationList
               annotations={annotations}
               selectedId={selectedId}
-              onSelectAnnotation={selectAnnotation}
+              onSelectAnnotation={handleSelectAnnotationFromPanel}
               onDeleteAnnotation={handleDeleteAnnotation}
             />
           </div>

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kept bounding box edge thickness consistent when selected to preserve exact edge visibility
 - Improved resize handle usability with clearer transformer handles and constrained in-image resizing behavior
 - Reduced select-mode resize handle marker circle size slightly for cleaner visuals
+- Centered the canvas on the selected bounding box when selected from the right annotation panel, while preserving current zoom
 
 ### Fixed
 

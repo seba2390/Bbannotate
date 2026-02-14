@@ -355,6 +355,7 @@ interface AnnotationCanvasProps {
   imageUrl: string | null;
   annotations: Annotation[];
   selectedId: string | null;
+  centerOnSelectedRequest: number;
   toolMode: ToolMode;
   bboxColorMode: BoundingBoxColorMode;
   customBboxColor: string;
@@ -384,6 +385,7 @@ export function AnnotationCanvas({
   imageUrl,
   annotations,
   selectedId,
+  centerOnSelectedRequest,
   toolMode,
   bboxColorMode,
   customBboxColor,
@@ -439,6 +441,7 @@ export function AnnotationCanvas({
   const cursorOverlayRef = useRef<HTMLDivElement>(null);
   const zoomToolbarRef = useRef<HTMLDivElement>(null);
   const crosshairToolbarRef = useRef<HTMLDivElement>(null);
+  const lastCenteredSelectionRequestRef = useRef(0);
 
   // Load image when URL changes
   useEffect(() => {
@@ -816,6 +819,28 @@ export function AnnotationCanvas({
     }
     return selectedAnnotationForResize.rect;
   }, [selectedAnnotationForResize, resizeSession, resizePreviewRect]);
+
+  // Center selected annotation when requested from the annotation panel without changing zoom.
+  useEffect(() => {
+    if (centerOnSelectedRequest <= 0) {
+      return;
+    }
+    if (centerOnSelectedRequest === lastCenteredSelectionRequestRef.current) {
+      return;
+    }
+    if (!selectedAnnotationForResize) {
+      return;
+    }
+
+    const rect = selectedAnnotationForResize.rect;
+    const centerX = rect.x + rect.width / 2;
+    const centerY = rect.y + rect.height / 2;
+    setStagePosition({
+      x: stageSize.width / 2 - centerX * scale,
+      y: stageSize.height / 2 - centerY * scale,
+    });
+    lastCenteredSelectionRequestRef.current = centerOnSelectedRequest;
+  }, [centerOnSelectedRequest, selectedAnnotationForResize, stageSize.width, stageSize.height, scale]);
 
   const drawCursor = useMemo(
     (): string => buildCrosshairCursor(crosshairArmLength, crosshairStrokeWidth),
