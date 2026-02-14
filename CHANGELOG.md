@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-02-14
+
+### Changed
+
+- Stabilized select-mode interactions so bounding boxes are selected reliably on pointer down and drag start
+- Kept bounding box edge thickness consistent when selected to preserve exact edge visibility
+- Improved resize handle usability with clearer transformer handles and constrained in-image resizing behavior
+- Reduced select-mode resize handle marker circle size slightly for cleaner visuals
+
+### Fixed
+
+- Fixed top resize handles becoming intermittently non-interactive due label text intercepting pointer events
+- Fixed intermittent transformer attachment by selecting nodes via ID predicate lookup instead of selector-string lookup
+- Fixed inconsistent resize-anchor activation by resolving handle selection from pointer distance rather than shape hit-order
+
 ## [1.0.9] - 2026-02-11
 
 ### Added
@@ -150,6 +165,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BBANNOTATE_DATA_DIR`: Override default data directory
 - `BBANNOTATE_PROJECTS_DIR`: Override default projects directory
 
-[Unreleased]: https://github.com/sebastianydemadsen/bbannotate/compare/v1.0.9...HEAD
+[Unreleased]: https://github.com/sebastianydemadsen/bbannotate/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/sebastianydemadsen/bbannotate/releases/tag/v1.1.0
 [1.0.9]: https://github.com/sebastianydemadsen/bbannotate/releases/tag/v1.0.9
 [1.0.0]: https://github.com/sebastianydemadsen/bbannotate/releases/tag/v1.0.0

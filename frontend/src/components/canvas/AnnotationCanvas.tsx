@@ -5,7 +5,7 @@ import {
   FastLayer,
   Image as KonvaImage,
   Rect,
-  Transformer,
+  Circle,
   Group,
   Text,
   Line,
@@ -50,6 +50,36 @@ const CROSSHAIR_CENTER_GAP = 2;
 const CROSSHAIR_PADDING = 2;
 const CROSSHAIR_OUTER_COLOR = '#0f172a';
 const CROSSHAIR_INNER_COLOR = '#f8fafc';
+const MIN_ANNOTATION_SIZE_PX = 10;
+const ANNOTATION_STROKE_WIDTH = 2;
+const ANNOTATION_HIT_STROKE_WIDTH = 12;
+const SELECT_HIT_PADDING_SCREEN_PX = 6;
+const RESIZE_HANDLE_RADIUS_SCREEN_PX = 5;
+const RESIZE_HANDLE_STROKE_SCREEN_PX = 1.5;
+const RESIZE_HANDLE_HIT_RADIUS_SCREEN_PX = 12;
+const RESIZE_HANDLE_FILL = '#ffffff';
+const RESIZE_HANDLE_STROKE = 'rgba(15, 23, 42, 0.95)';
+
+type ResizeHandle =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'middle-right'
+  | 'bottom-right'
+  | 'bottom-center'
+  | 'bottom-left'
+  | 'middle-left';
+
+const RESIZE_HANDLES: ReadonlyArray<ResizeHandle> = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'middle-right',
+  'bottom-right',
+  'bottom-center',
+  'bottom-left',
+  'middle-left',
+];
 
 interface LuminanceIntegralMap {
   width: number;
@@ -120,6 +150,148 @@ function normalizeRect(rect: DrawingRect): DrawingRect {
     width: Math.abs(rect.width),
     height: Math.abs(rect.height),
   };
+}
+
+function constrainRectToImageBounds(
+  rect: DrawingRect,
+  imageWidth: number,
+  imageHeight: number,
+  minSizePx = 0
+): DrawingRect {
+  if (imageWidth <= 0 || imageHeight <= 0) {
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+
+  const normalized = normalizeRect(rect);
+  const minWidth = Math.min(Math.max(minSizePx, 0), imageWidth);
+  const minHeight = Math.min(Math.max(minSizePx, 0), imageHeight);
+
+  const x = clamp(normalized.x, 0, Math.max(0, imageWidth - minWidth));
+  const y = clamp(normalized.y, 0, Math.max(0, imageHeight - minHeight));
+  const width = clamp(normalized.width, minWidth, imageWidth - x);
+  const height = clamp(normalized.height, minHeight, imageHeight - y);
+
+  return { x, y, width, height };
+}
+
+function resizeRectFromHandle(
+  rect: DrawingRect,
+  handle: ResizeHandle,
+  pointer: { x: number; y: number },
+  imageWidth: number,
+  imageHeight: number,
+  minSizePx: number
+): DrawingRect {
+  const maxX = Math.max(0, imageWidth);
+  const maxY = Math.max(0, imageHeight);
+  const clampedPointerX = clamp(pointer.x, 0, maxX);
+  const clampedPointerY = clamp(pointer.y, 0, maxY);
+
+  let left = rect.x;
+  let top = rect.y;
+  let right = rect.x + rect.width;
+  let bottom = rect.y + rect.height;
+
+  if (handle === 'top-left' || handle === 'middle-left' || handle === 'bottom-left') {
+    left = Math.min(clampedPointerX, right - minSizePx);
+  }
+  if (handle === 'top-right' || handle === 'middle-right' || handle === 'bottom-right') {
+    right = Math.max(clampedPointerX, left + minSizePx);
+  }
+  if (handle === 'top-left' || handle === 'top-center' || handle === 'top-right') {
+    top = Math.min(clampedPointerY, bottom - minSizePx);
+  }
+  if (handle === 'bottom-left' || handle === 'bottom-center' || handle === 'bottom-right') {
+    bottom = Math.max(clampedPointerY, top + minSizePx);
+  }
+
+  return constrainRectToImageBounds(
+    {
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    },
+    imageWidth,
+    imageHeight,
+    minSizePx
+  );
+}
+
+function getResizeHandlePosition(rect: DrawingRect, handle: ResizeHandle): { x: number; y: number } {
+  const left = rect.x;
+  const centerX = rect.x + rect.width / 2;
+  const right = rect.x + rect.width;
+  const top = rect.y;
+  const centerY = rect.y + rect.height / 2;
+  const bottom = rect.y + rect.height;
+
+  switch (handle) {
+    case 'top-left':
+      return { x: left, y: top };
+    case 'top-center':
+      return { x: centerX, y: top };
+    case 'top-right':
+      return { x: right, y: top };
+    case 'middle-right':
+      return { x: right, y: centerY };
+    case 'bottom-right':
+      return { x: right, y: bottom };
+    case 'bottom-center':
+      return { x: centerX, y: bottom };
+    case 'bottom-left':
+      return { x: left, y: bottom };
+    case 'middle-left':
+      return { x: left, y: centerY };
+    default:
+      return { x: centerX, y: centerY };
+  }
+}
+
+function getResizeHandleCursor(handle: ResizeHandle): string {
+  switch (handle) {
+    case 'top-left':
+    case 'bottom-right':
+      return 'nwse-resize';
+    case 'top-right':
+    case 'bottom-left':
+      return 'nesw-resize';
+    case 'top-center':
+    case 'bottom-center':
+      return 'ns-resize';
+    case 'middle-left':
+    case 'middle-right':
+      return 'ew-resize';
+    default:
+      return 'default';
+  }
+}
+
+function getResizeHandleAtPosition(
+  rect: DrawingRect,
+  position: { x: number; y: number },
+  maxDistance: number
+): ResizeHandle | null {
+  if (maxDistance <= 0) {
+    return null;
+  }
+
+  let nearestHandle: ResizeHandle | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const handle of RESIZE_HANDLES) {
+    const handlePosition = getResizeHandlePosition(rect, handle);
+    const dx = position.x - handlePosition.x;
+    const dy = position.y - handlePosition.y;
+    const distance = Math.hypot(dx, dy);
+
+    if (distance <= maxDistance && distance < nearestDistance) {
+      nearestHandle = handle;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearestHandle;
 }
 
 function formatCrosshairStrokeWidth(value: number): string {
@@ -234,7 +406,6 @@ export function AnnotationCanvas({
 }: AnnotationCanvasProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
-  const transformerRef = useRef<Konva.Transformer>(null);
 
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
@@ -253,6 +424,13 @@ export function AnnotationCanvas({
   const [isZoomPanelOpen, setIsZoomPanelOpen] = useState(false);
   const [isCrosshairLengthPanelOpen, setIsCrosshairLengthPanelOpen] = useState(false);
   const [isCrosshairWidthPanelOpen, setIsCrosshairWidthPanelOpen] = useState(false);
+  const [hoveredResizeHandle, setHoveredResizeHandle] = useState<ResizeHandle | null>(null);
+  const [resizeSession, setResizeSession] = useState<{
+    annotationId: string;
+    handle: ResizeHandle;
+    startRect: DrawingRect;
+  } | null>(null);
+  const [resizePreviewRect, setResizePreviewRect] = useState<DrawingRect | null>(null);
 
   // For auto-pan during drawing
   const autoPanRef = useRef<number | null>(null);
@@ -427,20 +605,13 @@ export function AnnotationCanvas({
     [zoom, baseScale, stagePosition]
   );
 
-  // Update transformer when selection changes
   useEffect(() => {
-    if (!transformerRef.current || !stageRef.current) return;
-
-    if (selectedId && toolMode === 'select') {
-      const selectedNode = stageRef.current.findOne(`#${selectedId}`);
-      if (selectedNode) {
-        transformerRef.current.nodes([selectedNode]);
-        transformerRef.current.getLayer()?.batchDraw();
-      }
-    } else {
-      transformerRef.current.nodes([]);
+    if (toolMode !== 'select' || !selectedId) {
+      setHoveredResizeHandle(null);
+      setResizeSession(null);
+      setResizePreviewRect(null);
     }
-  }, [selectedId, toolMode, annotations]);
+  }, [toolMode, selectedId]);
 
   // Stop auto-pan animation
   const stopAutoPan = useCallback((): void => {
@@ -517,11 +688,12 @@ export function AnnotationCanvas({
   const rectToBbox = useCallback(
     (rect: DrawingRect): BoundingBox => {
       if (!image) return { x: 0, y: 0, width: 0, height: 0 };
+      const constrainedRect = constrainRectToImageBounds(rect, image.width, image.height);
       return {
-        x: (rect.x + rect.width / 2) / image.width,
-        y: (rect.y + rect.height / 2) / image.height,
-        width: Math.abs(rect.width) / image.width,
-        height: Math.abs(rect.height) / image.height,
+        x: (constrainedRect.x + constrainedRect.width / 2) / image.width,
+        y: (constrainedRect.y + constrainedRect.height / 2) / image.height,
+        width: constrainedRect.width / image.width,
+        height: constrainedRect.height / image.height,
       };
     },
     [image]
@@ -626,12 +798,35 @@ export function AnnotationCanvas({
     });
   }, [annotations, bboxToRect, resolveAnnotationColor, selectedId]);
 
+  const selectedAnnotationForResize = useMemo(() => {
+    if (!selectedId) return null;
+    return renderedAnnotations.find(({ annotation }) => annotation.id === selectedId) ?? null;
+  }, [renderedAnnotations, selectedId]);
+
+  const selectedRectForResize = useMemo(() => {
+    if (!selectedAnnotationForResize) {
+      return null;
+    }
+    if (
+      resizeSession &&
+      resizePreviewRect &&
+      resizeSession.annotationId === selectedAnnotationForResize.annotation.id
+    ) {
+      return resizePreviewRect;
+    }
+    return selectedAnnotationForResize.rect;
+  }, [selectedAnnotationForResize, resizeSession, resizePreviewRect]);
+
   const drawCursor = useMemo(
     (): string => buildCrosshairCursor(crosshairArmLength, crosshairStrokeWidth),
     [crosshairArmLength, crosshairStrokeWidth]
   );
   const crosshairSegmentLength = Math.max(1, crosshairArmLength - CROSSHAIR_CENTER_GAP);
   const crosshairOuterStrokeWidth = crosshairStrokeWidth + 1.6;
+  const resizeHandleScale = Math.max(scale, 0.0001);
+  const resizeHandleRadius = RESIZE_HANDLE_RADIUS_SCREEN_PX / resizeHandleScale;
+  const resizeHandleStrokeWidth = RESIZE_HANDLE_STROKE_SCREEN_PX / resizeHandleScale;
+  const resizeHandleHitRadius = RESIZE_HANDLE_HIT_RADIUS_SCREEN_PX / resizeHandleScale;
 
   // Convert pointer position from stage space to image space
   const getImagePosition = useCallback(
@@ -679,6 +874,44 @@ export function AnnotationCanvas({
     overlayNode.style.top = `${screenPos.y}px`;
   }, []);
 
+  const getAnnotationIdAtPosition = useCallback(
+    (position: { x: number; y: number }): string | null => {
+      if (renderedAnnotations.length === 0) {
+        return null;
+      }
+
+      const hitPadding = SELECT_HIT_PADDING_SCREEN_PX / Math.max(scale, 0.0001);
+      const candidates = renderedAnnotations
+        .map((entry, index) => ({
+          ...entry,
+          index,
+          area: entry.rect.width * entry.rect.height,
+        }))
+        .filter(({ rect }) => {
+          return (
+            position.x >= rect.x - hitPadding &&
+            position.x <= rect.x + rect.width + hitPadding &&
+            position.y >= rect.y - hitPadding &&
+            position.y <= rect.y + rect.height + hitPadding
+          );
+        });
+
+      if (candidates.length === 0) {
+        return null;
+      }
+
+      candidates.sort((a, b) => {
+        if (a.area !== b.area) {
+          return a.area - b.area;
+        }
+        return b.index - a.index;
+      });
+
+      return candidates[0]?.annotation.id ?? null;
+    },
+    [renderedAnnotations, scale]
+  );
+
   useEffect(() => {
     if (toolMode !== 'draw') {
       setIsCursorOverlayVisible(false);
@@ -688,6 +921,51 @@ export function AnnotationCanvas({
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>): void => {
     const stage = e.target.getStage();
     if (!stage) return;
+
+    const target = e.target;
+    if (toolMode === 'select') {
+      const imagePos = getImagePosition(stage);
+      if (
+        imagePos &&
+        selectedAnnotationForResize &&
+        selectedRectForResize &&
+        isWithinImageBounds(imagePos)
+      ) {
+        const activeHandle = getResizeHandleAtPosition(
+          selectedRectForResize,
+          imagePos,
+          resizeHandleHitRadius
+        );
+        if (activeHandle) {
+          setHoveredResizeHandle(activeHandle);
+          setResizeSession({
+            annotationId: selectedAnnotationForResize.annotation.id,
+            handle: activeHandle,
+            startRect: selectedRectForResize,
+          });
+          setResizePreviewRect(selectedRectForResize);
+          return;
+        }
+      }
+
+      const targetId = target.id?.() ?? '';
+      if (selectedId && targetId === selectedId) {
+        return;
+      }
+
+      // Only background clicks should trigger geometric selection.
+      if (target !== stage) {
+        return;
+      }
+
+      if (!imagePos || !isWithinImageBounds(imagePos)) {
+        onSelectAnnotation(null);
+        return;
+      }
+
+      onSelectAnnotation(getAnnotationIdAtPosition(imagePos));
+      return;
+    }
 
     const screenPos = stage.getPointerPosition();
     if (!screenPos) return;
@@ -811,6 +1089,11 @@ export function AnnotationCanvas({
     const screenPos = stage.getPointerPosition();
     if (!screenPos) return;
 
+    if (resizeSession) {
+      updateResizePreviewFromStage(stage);
+      return;
+    }
+
     // Handle panning
     if (isPanning && toolMode === 'pan') {
       const dx = screenPos.x - lastPanPosition.x;
@@ -824,6 +1107,13 @@ export function AnnotationCanvas({
     }
 
     const imagePos = getImagePosition(stage);
+    if (toolMode === 'select') {
+      const nextHandle =
+        imagePos && selectedRectForResize
+          ? getResizeHandleAtPosition(selectedRectForResize, imagePos, resizeHandleHitRadius)
+          : null;
+      setHoveredResizeHandle((current) => (current === nextHandle ? current : nextHandle));
+    }
     const shouldShowOverlay = toolMode === 'draw' && !!imagePos && isWithinImageBounds(imagePos);
 
     if (shouldShowOverlay) {
@@ -860,12 +1150,32 @@ export function AnnotationCanvas({
 
   const handleMouseLeave = useCallback((): void => {
     setIsCursorOverlayVisible(false);
-  }, []);
+    if (!resizeSession) {
+      setHoveredResizeHandle(null);
+    }
+  }, [resizeSession]);
 
   const handleMouseUp = useCallback((): void => {
     // Stop any auto-pan in progress
     stopAutoPan();
     lastMousePosRef.current = null;
+
+    if (resizeSession) {
+      if (!image) {
+        return;
+      }
+      const finalRect = constrainRectToImageBounds(
+        resizePreviewRect ?? resizeSession.startRect,
+        image.width,
+        image.height,
+        MIN_ANNOTATION_SIZE_PX
+      );
+      onUpdateBbox(resizeSession.annotationId, rectToBbox(finalRect));
+      setResizeSession(null);
+      setResizePreviewRect(null);
+      setHoveredResizeHandle(null);
+      return;
+    }
 
     // Handle pan end
     if (isPanning) {
@@ -880,8 +1190,10 @@ export function AnnotationCanvas({
     }
 
     // Only create annotation if box is large enough (in image space)
-    const minSize = 10;
-    if (Math.abs(drawingRect.width) > minSize && Math.abs(drawingRect.height) > minSize) {
+    if (
+      Math.abs(drawingRect.width) > MIN_ANNOTATION_SIZE_PX &&
+      Math.abs(drawingRect.height) > MIN_ANNOTATION_SIZE_PX
+    ) {
       // Normalize rectangle (handle negative dimensions) - already in image space
       const normalizedRect: DrawingRect = {
         x: drawingRect.width < 0 ? drawingRect.x + drawingRect.width : drawingRect.x,
@@ -895,62 +1207,67 @@ export function AnnotationCanvas({
 
     setIsDrawing(false);
     setDrawingRect(null);
-  }, [isPanning, isDrawing, drawingRect, image, stopAutoPan, onAddAnnotation]);
+  }, [
+    stopAutoPan,
+    resizeSession,
+    image,
+    resizePreviewRect,
+    onUpdateBbox,
+    rectToBbox,
+    isPanning,
+    isDrawing,
+    drawingRect,
+    onAddAnnotation,
+  ]);
 
   // Listen for mouseup on window to catch releases outside the canvas
   useEffect(() => {
-    if (isDrawing || isPanning) {
+    if (isDrawing || isPanning || !!resizeSession) {
       window.addEventListener('mouseup', handleMouseUp);
       return () => window.removeEventListener('mouseup', handleMouseUp);
     }
-  }, [isDrawing, isPanning, handleMouseUp]);
-
-  const handleRectClick = (e: Konva.KonvaEventObject<MouseEvent | Event>, id: string): void => {
-    if (toolMode === 'select') {
-      e.cancelBubble = true;
-      onSelectAnnotation(id);
-    }
-  };
-
-  const handleTransformEnd = (e: Konva.KonvaEventObject<Event>, annotationId: string): void => {
-    const node = e.target;
-    const scaleX = node.scaleX();
-    const scaleY = node.scaleY();
-
-    // Reset scale and apply to width/height
-    node.scaleX(1);
-    node.scaleY(1);
-
-    const rect: DrawingRect = {
-      x: node.x(),
-      y: node.y(),
-      width: node.width() * scaleX,
-      height: node.height() * scaleY,
-    };
-
-    const bbox = rectToBbox(rect);
-    onUpdateBbox(annotationId, bbox);
-  };
+  }, [isDrawing, isPanning, resizeSession, handleMouseUp]);
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>, annotationId: string): void => {
+    if (!image) return;
     const node = e.target;
-    const rect: DrawingRect = {
+    const draggedRect: DrawingRect = {
       x: node.x(),
       y: node.y(),
       width: node.width(),
       height: node.height(),
     };
 
-    const bbox = rectToBbox(rect);
+    const constrainedRect = constrainRectToImageBounds(draggedRect, image.width, image.height);
+    node.x(constrainedRect.x);
+    node.y(constrainedRect.y);
+
+    const bbox = rectToBbox(constrainedRect);
     onUpdateBbox(annotationId, bbox);
   };
 
-  const handleStageClick = (e: Konva.KonvaEventObject<MouseEvent>): void => {
-    // Deselect when clicking on empty area
-    if (e.target === e.target.getStage()) {
-      onSelectAnnotation(null);
-    }
-  };
+  const updateResizePreviewFromStage = useCallback(
+    (stage: Konva.Stage): void => {
+      if (!resizeSession || !image) {
+        return;
+      }
+      const pointer = getImagePosition(stage);
+      if (!pointer) {
+        return;
+      }
+
+      const nextRect = resizeRectFromHandle(
+        resizeSession.startRect,
+        resizeSession.handle,
+        pointer,
+        image.width,
+        image.height,
+        MIN_ANNOTATION_SIZE_PX
+      );
+      setResizePreviewRect(nextRect);
+    },
+    [resizeSession, image, getImagePosition]
+  );
 
   // Get cursor style based on current tool
   const getCursor = (): string => {
@@ -959,7 +1276,10 @@ export function AnnotationCanvas({
         return isPanning ? 'grabbing' : 'grab';
       case 'draw':
         return isCursorOverlayVisible ? 'none' : drawCursor;
-      case 'select':
+      case 'select': {
+        const activeHandle = resizeSession?.handle ?? hoveredResizeHandle;
+        return activeHandle ? getResizeHandleCursor(activeHandle) : 'default';
+      }
       default:
         return 'default';
     }
@@ -1378,7 +1698,6 @@ export function AnnotationCanvas({
         onMouseLeave={handleMouseLeave}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
-        onClick={handleStageClick}
         style={{ cursor: getCursor() }}
       >
         <FastLayer listening={false}>
@@ -1488,15 +1807,19 @@ export function AnnotationCanvas({
           )}
         </FastLayer>
         <Layer>
-          {renderedAnnotations.map(({ annotation, rect, color, selected }) => (
-            <Group key={annotation.id}>
+          {renderedAnnotations.map(({ annotation, rect, color, selected }) => {
+            const displayRect =
+              selected && selectedRectForResize ? selectedRectForResize : rect;
+
+            return (
+              <Group key={annotation.id}>
               {selected && (
                 <>
                   <Rect
-                    x={rect.x - 3}
-                    y={rect.y - 3}
-                    width={rect.width + 6}
-                    height={rect.height + 6}
+                    x={displayRect.x - 3}
+                    y={displayRect.y - 3}
+                    width={displayRect.width + 6}
+                    height={displayRect.height + 6}
                     stroke="rgba(255, 255, 255, 0.98)"
                     strokeWidth={2}
                     dash={[10, 7]}
@@ -1505,10 +1828,10 @@ export function AnnotationCanvas({
                     listening={false}
                   />
                   <Rect
-                    x={rect.x - 4}
-                    y={rect.y - 4}
-                    width={rect.width + 8}
-                    height={rect.height + 8}
+                    x={displayRect.x - 4}
+                    y={displayRect.y - 4}
+                    width={displayRect.width + 8}
+                    height={displayRect.height + 8}
                     stroke="rgba(15, 23, 42, 0.9)"
                     strokeWidth={1}
                     dash={[10, 7]}
@@ -1521,35 +1844,40 @@ export function AnnotationCanvas({
               )}
               <Rect
                 id={annotation.id}
-                x={rect.x}
-                y={rect.y}
-                width={rect.width}
-                height={rect.height}
+                name={`annotation-${annotation.id}`}
+                x={displayRect.x}
+                y={displayRect.y}
+                width={displayRect.width}
+                height={displayRect.height}
                 stroke={color}
-                strokeWidth={selected ? 4 : 2}
+                strokeWidth={ANNOTATION_STROKE_WIDTH}
+                hitStrokeWidth={selected ? 0 : ANNOTATION_HIT_STROKE_WIDTH}
                 fill={selected ? `${color}35` : `${color}1d`}
-                draggable={toolMode === 'select'}
+                listening={toolMode === 'select' && selected}
+                draggable={toolMode === 'select' && selected && !resizeSession}
+                dragBoundFunc={(position) => ({
+                  x: clamp(position.x, 0, Math.max(0, imageWidth - displayRect.width)),
+                  y: clamp(position.y, 0, Math.max(0, imageHeight - displayRect.height)),
+                })}
                 shadowColor={selected ? color : undefined}
                 shadowBlur={selected ? 16 : 0}
                 shadowOpacity={selected ? 0.55 : 0}
-                perfectDrawEnabled={false}
-                onClick={(e) => handleRectClick(e, annotation.id)}
-                onTap={(e) => handleRectClick(e, annotation.id)}
                 onDragEnd={(e) => handleDragEnd(e, annotation.id)}
-                onTransformEnd={(e) => handleTransformEnd(e, annotation.id)}
               />
               <Text
-                x={rect.x}
-                y={rect.y - 19}
+                x={displayRect.x}
+                y={displayRect.y - 19}
                 text={annotation.label}
                 fontSize={13}
                 fill={selected ? '#f8fafc' : color}
                 fontStyle="bold"
                 stroke={selected ? 'rgba(15, 23, 42, 0.7)' : undefined}
                 strokeWidth={selected ? 0.8 : 0}
+                listening={false}
               />
-            </Group>
-          ))}
+              </Group>
+            );
+          })}
           {/* Drawing rectangle */}
           {drawingRect && (
             <Rect
@@ -1562,19 +1890,29 @@ export function AnnotationCanvas({
               dash={[5, 5]}
               fill={`${drawingPreviewColor}20`}
               perfectDrawEnabled={false}
+              listening={false}
             />
           )}
-          {/* Transformer for resizing */}
-          <Transformer
-            ref={transformerRef}
-            boundBoxFunc={(oldBox, newBox) => {
-              // Limit minimum size
-              if (newBox.width < 10 || newBox.height < 10) {
-                return oldBox;
-              }
-              return newBox;
-            }}
-          />
+          {toolMode === 'select' && selectedAnnotationForResize && selectedRectForResize && (
+            <>
+              {RESIZE_HANDLES.map((handle) => {
+                const position = getResizeHandlePosition(selectedRectForResize, handle);
+                return (
+                  <Circle
+                    key={`${selectedAnnotationForResize.annotation.id}-${handle}`}
+                    x={position.x}
+                    y={position.y}
+                    radius={resizeHandleRadius}
+                    fill={RESIZE_HANDLE_FILL}
+                    stroke={RESIZE_HANDLE_STROKE}
+                    strokeWidth={resizeHandleStrokeWidth}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                );
+              })}
+            </>
+          )}
         </Layer>
       </Stage>
 
