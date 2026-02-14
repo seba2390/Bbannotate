@@ -54,9 +54,9 @@ const MIN_ANNOTATION_SIZE_PX = 10;
 const ANNOTATION_STROKE_WIDTH = 2;
 const ANNOTATION_HIT_STROKE_WIDTH = 12;
 const SELECT_HIT_PADDING_SCREEN_PX = 6;
-const RESIZE_HANDLE_RADIUS_SCREEN_PX = 6;
+const RESIZE_HANDLE_RADIUS_SCREEN_PX = 5;
 const RESIZE_HANDLE_STROKE_SCREEN_PX = 1.5;
-const RESIZE_HANDLE_HIT_STROKE_SCREEN_PX = 20;
+const RESIZE_HANDLE_HIT_RADIUS_SCREEN_PX = 12;
 const RESIZE_HANDLE_FILL = '#ffffff';
 const RESIZE_HANDLE_STROKE = 'rgba(15, 23, 42, 0.95)';
 
@@ -265,6 +265,33 @@ function getResizeHandleCursor(handle: ResizeHandle): string {
     default:
       return 'default';
   }
+}
+
+function getResizeHandleAtPosition(
+  rect: DrawingRect,
+  position: { x: number; y: number },
+  maxDistance: number
+): ResizeHandle | null {
+  if (maxDistance <= 0) {
+    return null;
+  }
+
+  let nearestHandle: ResizeHandle | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const handle of RESIZE_HANDLES) {
+    const handlePosition = getResizeHandlePosition(rect, handle);
+    const dx = position.x - handlePosition.x;
+    const dy = position.y - handlePosition.y;
+    const distance = Math.hypot(dx, dy);
+
+    if (distance <= maxDistance && distance < nearestDistance) {
+      nearestHandle = handle;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearestHandle;
 }
 
 function formatCrosshairStrokeWidth(value: number): string {
@@ -799,7 +826,7 @@ export function AnnotationCanvas({
   const resizeHandleScale = Math.max(scale, 0.0001);
   const resizeHandleRadius = RESIZE_HANDLE_RADIUS_SCREEN_PX / resizeHandleScale;
   const resizeHandleStrokeWidth = RESIZE_HANDLE_STROKE_SCREEN_PX / resizeHandleScale;
-  const resizeHandleHitStrokeWidth = RESIZE_HANDLE_HIT_STROKE_SCREEN_PX / resizeHandleScale;
+  const resizeHandleHitRadius = RESIZE_HANDLE_HIT_RADIUS_SCREEN_PX / resizeHandleScale;
 
   // Convert pointer position from stage space to image space
   const getImagePosition = useCallback(
@@ -897,6 +924,30 @@ export function AnnotationCanvas({
 
     const target = e.target;
     if (toolMode === 'select') {
+      const imagePos = getImagePosition(stage);
+      if (
+        imagePos &&
+        selectedAnnotationForResize &&
+        selectedRectForResize &&
+        isWithinImageBounds(imagePos)
+      ) {
+        const activeHandle = getResizeHandleAtPosition(
+          selectedRectForResize,
+          imagePos,
+          resizeHandleHitRadius
+        );
+        if (activeHandle) {
+          setHoveredResizeHandle(activeHandle);
+          setResizeSession({
+            annotationId: selectedAnnotationForResize.annotation.id,
+            handle: activeHandle,
+            startRect: selectedRectForResize,
+          });
+          setResizePreviewRect(selectedRectForResize);
+          return;
+        }
+      }
+
       const targetId = target.id?.() ?? '';
       if (selectedId && targetId === selectedId) {
         return;
@@ -907,7 +958,6 @@ export function AnnotationCanvas({
         return;
       }
 
-      const imagePos = getImagePosition(stage);
       if (!imagePos || !isWithinImageBounds(imagePos)) {
         onSelectAnnotation(null);
         return;
@@ -1057,6 +1107,13 @@ export function AnnotationCanvas({
     }
 
     const imagePos = getImagePosition(stage);
+    if (toolMode === 'select') {
+      const nextHandle =
+        imagePos && selectedRectForResize
+          ? getResizeHandleAtPosition(selectedRectForResize, imagePos, resizeHandleHitRadius)
+          : null;
+      setHoveredResizeHandle((current) => (current === nextHandle ? current : nextHandle));
+    }
     const shouldShowOverlay = toolMode === 'draw' && !!imagePos && isWithinImageBounds(imagePos);
 
     if (shouldShowOverlay) {
@@ -1188,28 +1245,6 @@ export function AnnotationCanvas({
     const bbox = rectToBbox(constrainedRect);
     onUpdateBbox(annotationId, bbox);
   };
-
-  const handleResizeHandlePointerDown = useCallback(
-    (
-      e: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
-      annotationId: string,
-      handle: ResizeHandle,
-      startRect: DrawingRect
-    ): void => {
-      if (toolMode !== 'select' || !image) {
-        return;
-      }
-      e.cancelBubble = true;
-      if (e.evt) {
-        e.evt.preventDefault();
-        e.evt.stopPropagation();
-      }
-      setHoveredResizeHandle(handle);
-      setResizeSession({ annotationId, handle, startRect });
-      setResizePreviewRect(startRect);
-    },
-    [toolMode, image]
-  );
 
   const updateResizePreviewFromStage = useCallback(
     (stage: Konva.Stage): void => {
@@ -1871,28 +1906,8 @@ export function AnnotationCanvas({
                     fill={RESIZE_HANDLE_FILL}
                     stroke={RESIZE_HANDLE_STROKE}
                     strokeWidth={resizeHandleStrokeWidth}
-                    hitStrokeWidth={resizeHandleHitStrokeWidth}
                     perfectDrawEnabled={false}
-                    onMouseEnter={() => setHoveredResizeHandle(handle)}
-                    onMouseLeave={() =>
-                      setHoveredResizeHandle((current) => (current === handle ? null : current))
-                    }
-                    onMouseDown={(e) =>
-                      handleResizeHandlePointerDown(
-                        e,
-                        selectedAnnotationForResize.annotation.id,
-                        handle,
-                        selectedRectForResize
-                      )
-                    }
-                    onTouchStart={(e) =>
-                      handleResizeHandlePointerDown(
-                        e,
-                        selectedAnnotationForResize.annotation.id,
-                        handle,
-                        selectedRectForResize
-                      )
-                    }
+                    listening={false}
                   />
                 );
               })}
