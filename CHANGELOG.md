@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-02-14
+
+### Changed
+
+- Centered the canvas on the selected bounding box when selected from the right annotation panel, while preserving current zoom
+
 ## [1.1.0] - 2026-02-14
 
 ### Changed
@@ -15,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kept bounding box edge thickness consistent when selected to preserve exact edge visibility
 - Improved resize handle usability with clearer transformer handles and constrained in-image resizing behavior
 - Reduced select-mode resize handle marker circle size slightly for cleaner visuals
-- Centered the canvas on the selected bounding box when selected from the right annotation panel, while preserving current zoom
 
 ### Fixed
 
@@ -166,7 +171,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BBANNOTATE_DATA_DIR`: Override default data directory
 - `BBANNOTATE_PROJECTS_DIR`: Override default projects directory
 
-[Unreleased]: https://github.com/sebastianydemadsen/bbannotate/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/sebastianydemadsen/bbannotate/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/sebastianydemadsen/bbannotate/releases/tag/v1.1.1
 [1.1.0]: https://github.com/sebastianydemadsen/bbannotate/releases/tag/v1.1.0
 [1.0.9]: https://github.com/sebastianydemadsen/bbannotate/releases/tag/v1.0.9
 [1.0.0]: https://github.com/sebastianydemadsen/bbannotate/releases/tag/v1.0.0
